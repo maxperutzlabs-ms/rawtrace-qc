@@ -416,6 +416,113 @@ def create_window(
                 display_text,
             )
 
+    class ElidedLabel(qt_widgets.QLabel):
+        """Display long labels with a trailing ellipsis and preserve the full text."""
+
+        def __init__(self, text: str, parent: Any | None = None) -> None:
+            super().__init__(text, parent)
+            self._full_text = text
+
+        def resizeEvent(self, event: Any) -> None:
+            super().resizeEvent(event)
+            metrics = qt_gui.QFontMetrics(self.font())
+            self.setText(
+                metrics.elidedText(
+                    self._full_text,
+                    qt_core.Qt.TextElideMode.ElideRight,
+                    self.contentsRect().width(),
+                )
+            )
+
+    class ThemedComboBox(qt_widgets.QComboBox):
+        """Display a rounded popup without clipping its options."""
+
+        def __init__(self, parent: Any | None = None) -> None:
+            super().__init__(parent)
+            self.setView(qt_widgets.QListView(self))
+            container = self.findChild(qt_widgets.QFrame)
+            if container is not None:
+                container.setFrameShape(qt_widgets.QFrame.Shape.NoFrame)
+                container.setLineWidth(0)
+            self.setMaxVisibleItems(6)
+
+        def showPopup(self) -> None:
+            """Position the popup within the active screen work area."""
+            super().showPopup()
+            container = self.findChild(qt_widgets.QFrame)
+            if container is None:
+                return
+            container.setFrameShape(qt_widgets.QFrame.Shape.NoFrame)
+            container.setLineWidth(0)
+            view = self.view()
+            visible_count = min(self.count(), 6)
+            row_heights = [
+                max(view.sizeHintForRow(index), 36) for index in range(visible_count)
+            ]
+            top_margin = max(0, view.y())
+            bottom_margin = max(0, container.height() - view.y() - view.height())
+            view_overhead = max(0, view.height() - view.viewport().height())
+            total_h = top_margin + sum(row_heights) + view_overhead + bottom_margin
+
+            global_combo = self.mapToGlobal(qt_core.QPoint(0, 0))
+            screen = self.screen()
+            if screen is None:
+                screen = qt_widgets.QApplication.primaryScreen()
+            if screen is None:
+                return
+
+            available = screen.availableGeometry()
+            gap = 2
+            below_y = global_combo.y() + self.height() + gap
+            above_y = global_combo.y() - total_h - gap
+            available_bottom = available.bottom() + 1
+            space_below = max(0, available_bottom - below_y)
+            space_above = max(0, global_combo.y() - gap - available.top())
+
+            if space_below >= total_h:
+                popup_y = below_y
+                popup_height = total_h
+            elif space_above >= total_h:
+                popup_y = above_y
+                popup_height = total_h
+            elif space_below >= space_above:
+                popup_y = below_y
+                popup_height = min(total_h, space_below)
+            else:
+                popup_y = global_combo.y() - gap - min(total_h, space_above)
+                popup_height = min(total_h, space_above)
+
+            popup_height = min(popup_height, available.height())
+            popup_y = max(
+                available.top(),
+                min(popup_y, available_bottom - popup_height),
+            )
+            popup_width = max(self.width(), container.width())
+            popup_width = min(popup_width, available.width())
+            popup_x = max(
+                available.left(),
+                min(global_combo.x(), available.right() + 1 - popup_width),
+            )
+
+            parent = container.parentWidget()
+            if container.isWindow() or parent is None:
+                popup_position = qt_core.QPoint(popup_x, popup_y)
+            else:
+                popup_position = parent.mapFromGlobal(qt_core.QPoint(popup_x, popup_y))
+            container.setGeometry(
+                popup_position.x(),
+                popup_position.y(),
+                popup_width,
+                popup_height,
+            )
+            right_margin = max(0, container.width() - view.x() - view.width())
+            view.setGeometry(
+                view.x(),
+                view.y(),
+                max(0, popup_width - view.x() - right_margin),
+                max(0, popup_height - top_margin - bottom_margin),
+            )
+
     class MainWindow(qt_widgets.QMainWindow):
         """Present discovery, selected inputs, and report controls."""
 
@@ -1169,17 +1276,53 @@ def create_window(
 
         def _open_settings(self) -> None:
             dialog = qt_widgets.QDialog(self)
+            dialog.setObjectName("settingsDialog")
             dialog.setWindowTitle("rawtrace-qc settings")
-            dialog.resize(640, 430)
+            dialog.resize(900, 740)
             layout = qt_widgets.QVBoxLayout(dialog)
-            form = qt_widgets.QFormLayout()
-            cache_edit = qt_widgets.QLineEdit(str(self._settings.cache_directory))
-            report_edit = qt_widgets.QLineEdit(str(self._settings.report_directory))
-            helper_path = qt_widgets.QLineEdit(
-                str(self._settings.thermo.executable_path or "")
-            )
-            theme_combo = qt_widgets.QComboBox()
+            layout.setContentsMargins(20, 20, 20, 20)
+            layout.setSpacing(14)
+
+            def make_card(title: str) -> tuple[Any, Any]:
+                card = qt_widgets.QFrame()
+                card.setObjectName("card")
+                card_layout = qt_widgets.QVBoxLayout(card)
+                card_layout.setContentsMargins(18, 16, 18, 16)
+                card_layout.setSpacing(14)
+                title_label = qt_widgets.QLabel(title)
+                title_label.setObjectName("settingsCardTitle")
+                card_layout.addWidget(title_label)
+                form = qt_widgets.QFormLayout()
+                form.setHorizontalSpacing(16)
+                form.setVerticalSpacing(12)
+                form.setFieldGrowthPolicy(
+                    qt_widgets.QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow
+                )
+                card_layout.addLayout(form)
+                layout.addWidget(card)
+                return card, form
+
+            def add_setting_row(
+                form: Any, text: str, field: Any, tooltip: str = ""
+            ) -> Any:
+                label = qt_widgets.QLabel(text)
+                label.setObjectName("settingsFormLabel")
+                label.setFixedWidth(190)
+                if tooltip:
+                    label.setToolTip(tooltip)
+                    field.setToolTip(tooltip)
+                form.addRow(label, field)
+                return label
+
+            _, appearance_form = make_card("Appearance")
+            _, filters_form = make_card("File filters")
+            _, storage_form = make_card("Storage")
+            _, thermo_form = make_card("Thermo helper")
+
+            theme_combo = ThemedComboBox()
             theme_combo.setObjectName("themeMode")
+            theme_combo.setFixedWidth(220)
+            theme_combo.setFixedHeight(40)
             theme_modes = (("System", "system"), ("Light", "light"), ("Dark", "dark"))
             for label, mode in theme_modes:
                 theme_combo.addItem(label, mode)
@@ -1190,7 +1333,12 @@ def create_window(
                     if mode == self._settings.theme_mode
                 )
             )
+            add_setting_row(appearance_form, "Theme", theme_combo)
+
             size_edit = qt_widgets.QLineEdit(str(int(self._settings.min_size_mb)))
+            size_edit.setObjectName("settingsField")
+            size_edit.setFixedWidth(160)
+            size_edit.setFixedHeight(40)
             size_edit.setValidator(
                 qt_gui.QRegularExpressionValidator(
                     qt_core.QRegularExpression("[0-9]*"),
@@ -1198,43 +1346,125 @@ def create_window(
                 )
             )
             age_edit = qt_widgets.QLineEdit(str(self._settings.min_age_minutes))
+            age_edit.setObjectName("settingsField")
+            age_edit.setFixedWidth(160)
+            age_edit.setFixedHeight(40)
             age_edit.setValidator(
                 qt_gui.QRegularExpressionValidator(
                     qt_core.QRegularExpression("[0-9]*(\\.[0-9]*)?"),
                     age_edit,
                 )
             )
-
-            form.addRow("Minimum file size (MB)", size_edit)
-            form.addRow("Minimum age (minutes)", age_edit)
-            form.addRow("Theme", theme_combo)
-            form.addRow("Trace cache", _path_editor(cache_edit, dialog, False))
-            form.addRow("Permanent reports", _path_editor(report_edit, dialog, False))
-            form.addRow(
-                "Pinned Thermo helper",
-                qt_widgets.QLabel(
-                    f"v{THERMO_HELPER_SPECIFICATION.version} - "
-                    f"{THERMO_HELPER_SPECIFICATION.asset_name}"
+            for line_edit, unit_text, tooltip in (
+                (
+                    size_edit,
+                    "MB",
+                    "Files smaller than this are skipped when scanning.",
                 ),
+                (
+                    age_edit,
+                    "min",
+                    "Files modified more recently than this are skipped, for example "
+                    "while they are still being acquired.",
+                ),
+            ):
+                unit_label = qt_widgets.QLabel(unit_text, line_edit)
+                unit_label.setObjectName("fieldUnit")
+                unit_label.setToolTip(tooltip)
+                unit_layout = qt_widgets.QHBoxLayout(line_edit)
+                unit_layout.setContentsMargins(0, 0, 12, 0)
+                unit_layout.addStretch()
+                unit_layout.addWidget(unit_label)
+                line_edit.setTextMargins(0, 0, 36, 0)
+
+            add_setting_row(
+                filters_form,
+                "Ignore files smaller than",
+                size_edit,
+                "Files smaller than this are skipped when scanning.",
             )
-            form.addRow(
-                "Thermo helper executable",
-                _path_editor(helper_path, dialog, True),
+            add_setting_row(
+                filters_form,
+                "Ignore files newer than",
+                age_edit,
+                "Files modified more recently than this are skipped, for example "
+                "while they are still being acquired.",
             )
-            layout.addLayout(form)
-            note = qt_widgets.QLabel(
-                "When no local executable is selected, rawtrace-qc downloads the "
-                "pinned archive and verifies its SHA-256 before installation."
+
+            cache_edit = ElidedLineEdit(str(self._settings.cache_directory))
+            cache_edit.setObjectName("settingsPathField")
+            cache_edit.setFixedHeight(40)
+            report_edit = ElidedLineEdit(str(self._settings.report_directory))
+            report_edit.setObjectName("settingsPathField")
+            report_edit.setFixedHeight(40)
+            for path_edit in (cache_edit, report_edit):
+                path_edit.setToolTip(path_edit.text())
+                path_edit.textChanged.connect(path_edit.setToolTip)
+            cache_editor = _path_editor(cache_edit, dialog, False)
+            report_editor = _path_editor(report_edit, dialog, False)
+            add_setting_row(
+                storage_form,
+                "Trace cache",
+                cache_editor,
+                "Where extracted trace data is cached.",
             )
-            note.setWordWrap(True)
-            note.setObjectName("muted")
-            layout.addWidget(note)
+            add_setting_row(
+                storage_form,
+                "Permanent reports",
+                report_editor,
+                "Default folder for permanent reports.",
+            )
+
+            pinned_version = qt_widgets.QWidget()
+            pinned_layout = qt_widgets.QHBoxLayout(pinned_version)
+            pinned_layout.setContentsMargins(0, 0, 0, 0)
+            pinned_layout.setSpacing(8)
+            version_pill = qt_widgets.QLabel(f"v{THERMO_HELPER_SPECIFICATION.version}")
+            version_pill.setObjectName("pinnedVersion")
+            asset_name = ElidedLabel(THERMO_HELPER_SPECIFICATION.asset_name)
+            asset_name.setObjectName("settingsAssetName")
+            asset_name.setToolTip(THERMO_HELPER_SPECIFICATION.asset_name)
+            pinned_layout.addWidget(version_pill)
+            pinned_layout.addWidget(asset_name, 1)
+            add_setting_row(thermo_form, "Pinned version", pinned_version)
+
+            helper_path = ElidedLineEdit(
+                str(self._settings.thermo.executable_path or "")
+            )
+            helper_path.setObjectName("settingsPathField")
+            helper_path.setFixedHeight(40)
+            helper_path.setPlaceholderText(
+                "Optional. Leave empty to download the pinned version"
+            )
+            helper_path.setToolTip(helper_path.text())
+            helper_path.textChanged.connect(helper_path.setToolTip)
+            helper_editor = _path_editor(helper_path, dialog, True)
+            helper_field = qt_widgets.QWidget()
+            helper_field_layout = qt_widgets.QVBoxLayout(helper_field)
+            helper_field_layout.setContentsMargins(0, 0, 0, 0)
+            helper_field_layout.setSpacing(8)
+            helper_field_layout.addWidget(helper_editor)
+            helper_note = qt_widgets.QLabel(
+                "Without a local executable, the pinned version is downloaded and "
+                "its SHA-256 is verified before installation."
+            )
+            helper_note.setObjectName("settingsFieldNote")
+            helper_note.setWordWrap(True)
+            helper_field_layout.addWidget(helper_note)
+            add_setting_row(thermo_form, "Local executable", helper_field)
+
             button_row = qt_widgets.QHBoxLayout()
+            button_row.setSpacing(8)
             reset_button = qt_widgets.QPushButton("Reset defaults")
+            reset_button.setObjectName("textButton")
             apply_button = qt_widgets.QPushButton("Apply")
-            apply_save_button = qt_widgets.QPushButton("Apply and save")
-            apply_save_button.setObjectName("primary")
             cancel_button = qt_widgets.QPushButton("Cancel")
+            apply_button.setObjectName("secondary")
+            cancel_button.setObjectName("secondary")
+            save_button = qt_widgets.QPushButton("Save")
+            save_button.setObjectName("dialogPrimary")
+            save_button.setDefault(True)
+            save_button.setFixedHeight(40)
 
             def apply_settings(persist: bool) -> None:
                 self._apply_settings_dialog(
@@ -1259,14 +1489,31 @@ def create_window(
                 )
             )
             apply_button.clicked.connect(lambda: apply_settings(False))
-            apply_save_button.clicked.connect(lambda: apply_settings(True))
+            save_button.clicked.connect(lambda: apply_settings(True))
             cancel_button.clicked.connect(dialog.reject)
             button_row.addWidget(reset_button)
             button_row.addStretch()
-            button_row.addWidget(apply_save_button)
-            button_row.addWidget(apply_button)
             button_row.addWidget(cancel_button)
+            button_row.addWidget(apply_button)
+            button_row.addWidget(save_button)
             layout.addLayout(button_row)
+            tab_order = (
+                theme_combo,
+                size_edit,
+                age_edit,
+                cache_edit,
+                cache_editor.findChild(qt_widgets.QPushButton),
+                report_edit,
+                report_editor.findChild(qt_widgets.QPushButton),
+                helper_path,
+                helper_editor.findChild(qt_widgets.QPushButton),
+                reset_button,
+                cancel_button,
+                apply_button,
+                save_button,
+            )
+            for first, second in zip(tab_order, tab_order[1:], strict=False):
+                qt_widgets.QWidget.setTabOrder(first, second)
             dialog.exec()
 
         def _apply_settings_dialog(
@@ -1405,6 +1652,8 @@ def _path_editor(line_edit: Any, dialog: Any, file_mode: bool) -> Any:
     layout = qt_widgets.QHBoxLayout(container)
     layout.setContentsMargins(0, 0, 0, 0)
     button = qt_widgets.QPushButton("Browse")
+    button.setObjectName("secondary")
+    button.setFixedHeight(40)
 
     def browse() -> None:
         start_directory = _dialog_start_directory(line_edit.text())

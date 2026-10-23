@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from importlib import import_module
+from pathlib import Path
 from string import Template
 from typing import Any
+
+_RESOURCES_DIRECTORY = Path(__file__).parent / "resources"
 
 
 @dataclass(frozen=True)
@@ -14,9 +17,13 @@ class Theme:
 
     name: str = "light"
     is_dark: bool = False
+    chevron_down_icon: str = (
+        _RESOURCES_DIRECTORY / "chevron-down-light.svg"
+    ).as_posix()
 
     # Window and section surfaces
     window_background: str = "#f3f7f8"
+    settings_dialog_background: str = "#EEF4F6"
     surface_background: str = "#ffffff"
     section_background: str = "#ffffff"
     card_background: str = "#ffffff"
@@ -30,6 +37,7 @@ class Theme:
     mode_option_hover: str = "#d8e7eb"
     mode_option_active_background: str = "#0F7C7A"
     mode_option_active_text: str = "#ffffff"
+    dialog_primary_hover: str = "#0c6563"
     report_hint_text: str = "#4F6B79"
 
     # Input and standard button surfaces
@@ -116,11 +124,13 @@ class Theme:
 LIGHT_THEME = Theme(name="light")
 DARK_THEME = Theme(
     name="dark",
+    chevron_down_icon=(_RESOURCES_DIRECTORY / "chevron-down-dark.svg").as_posix(),
     window_background="#12161a",
     surface_background="#1c2128",
     section_background="#1c2128",
     card_background="#1c2128",
     card_border="#30363d",
+    settings_dialog_background="#12161a",
     badge_background="#0F7C7A",
     badge_text="#ffffff",
     title_text="#e6edf3",
@@ -130,6 +140,7 @@ DARK_THEME = Theme(
     mode_option_hover="#323a46",
     mode_option_active_background="#0F7C7A",
     mode_option_active_text="#ffffff",
+    dialog_primary_hover="#0c6563",
     report_hint_text="#919ea8",
     input_background="#171b21",
     button_background="#262c36",
@@ -214,6 +225,9 @@ QMainWindow, QDialog, QMessageBox {
     background: $window_background;
     color: $text_primary;
 }
+QDialog#settingsDialog {
+    background: $settings_dialog_background;
+}
 QFrame#card, QFrame#section {
     background: $card_background;
     color: $text_primary;
@@ -232,6 +246,130 @@ QLabel#cardTitle {
     color: $title_text;
     font-size: 15px;
     font-weight: 600;
+}
+QLabel#settingsCardTitle {
+    background: transparent;
+    color: $title_text;
+    font-size: 15px;
+    font-weight: 600;
+}
+QLabel#settingsFormLabel {
+    background: transparent;
+    color: $title_text;
+    font-size: 14px;
+}
+QLabel#fieldUnit {
+    background: transparent;
+    color: $muted_text;
+    font-size: 13px;
+}
+QLabel#settingsAssetName, QLabel#settingsFieldNote {
+    background: transparent;
+    color: $muted_text;
+    font-size: 12.5px;
+}
+QLabel#settingsAssetName {
+    font-size: 13px;
+}
+QLabel#pinnedVersion {
+    background: $count_pill_background;
+    color: $count_pill_text;
+    border: 0;
+    border-radius: 999px;
+    padding: 3px 10px;
+    font-size: 12.5px;
+    font-weight: 600;
+}
+QLineEdit#settingsField, QLineEdit#settingsPathField, QComboBox#themeMode {
+    background: $input_background;
+    color: $text_primary;
+    border: 1px solid $folder_input_border;
+    border-radius: 8px;
+    padding: 0 12px;
+    font-size: 14px;
+    min-height: 40px;
+    max-height: 40px;
+}
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: center right;
+    width: 28px;
+    border: none;
+    background: transparent;
+}
+QComboBox::down-arrow {
+    image: url($chevron_down_icon);
+    width: 12px;
+    height: 12px;
+}
+QComboBox QAbstractItemView {
+    background: $surface_background;
+    color: $text_primary;
+    border: 1px solid $folder_input_border;
+    border-radius: 8px;
+    padding: 4px;
+    selection-background-color: $list_selected_background;
+    selection-color: $list_selected_text;
+    outline: 0;
+}
+QComboBox QAbstractItemView::item {
+    min-height: 32px;
+    padding: 4px 10px;
+    border-radius: 6px;
+}
+QComboBox QAbstractItemView::item:hover,
+QComboBox QAbstractItemView::item:selected {
+    background: $list_selected_background;
+    color: $list_selected_text;
+}
+QLineEdit#settingsPathField {
+    font-size: 13.5px;
+}
+QLineEdit#settingsField:focus, QLineEdit#settingsPathField:focus,
+QComboBox#themeMode:focus {
+    border: 2px solid $mode_option_active_background;
+}
+QPushButton#secondary:focus {
+    border: 2px solid $mode_option_active_background;
+}
+QDialog#settingsDialog QPushButton#secondary {
+    padding: 0 18px;
+}
+QPushButton#textButton {
+    background: transparent;
+    color: $title_text;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: underline;
+}
+QPushButton#textButton:hover {
+    background: transparent;
+    color: $title_text;
+}
+QPushButton#textButton:focus {
+    border: 2px solid $mode_option_active_background;
+    border-radius: 4px;
+}
+QPushButton#dialogPrimary {
+    background: $mode_option_active_background;
+    color: $primary_button_text;
+    border: 0;
+    border-radius: 8px;
+    padding: 0 24px;
+    font-size: 14px;
+    font-weight: 700;
+    min-height: 40px;
+    max-height: 40px;
+}
+QPushButton#dialogPrimary:hover {
+    background: $dialog_primary_hover;
+    color: $primary_button_text;
+}
+QPushButton#dialogPrimary:focus {
+    border: 2px solid $mode_option_active_background;
 }
 QLabel#statusLabel {
     background: transparent;

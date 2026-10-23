@@ -109,6 +109,65 @@ def test_dialog_start_directory_uses_selected_path_or_appdata(
 
 
 class TestSettingsDialog:
+    def test_theme_dropdown_opens_below_when_possible_and_shows_every_option(
+        self,
+        tmp_path: Path,
+        qt_application,
+    ) -> None:
+        qt_core, qt_gui, qt_widgets = _load_qt()
+        window = create_window(qt_core, qt_gui, qt_widgets, tmp_path / "settings.json")
+        result: dict[str, object] = {}
+        dialog = None
+        theme_combo = None
+
+        def inspect_dialog() -> None:
+            nonlocal dialog, theme_combo
+            try:
+                dialog = next(
+                    widget
+                    for widget in qt_application.topLevelWidgets()
+                    if isinstance(widget, qt_widgets.QDialog) and widget.isVisible()
+                )
+                theme_combo = dialog.findChild(qt_widgets.QComboBox, "themeMode")
+                assert theme_combo is not None
+                theme_combo.showPopup()
+                qt_application.processEvents()
+
+                popup = theme_combo.findChild(qt_widgets.QFrame)
+                assert popup is not None
+                view = theme_combo.view()
+                visible_rows = [view.visualRect(view.model().index(index, 0)) for index in range(theme_combo.count())]
+                assert all(row.isValid() for row in visible_rows)
+                result["all_rows_fit"] = all(view.viewport().rect().contains(row) for row in visible_rows)
+
+                screen = theme_combo.screen()
+                assert screen is not None
+                available = screen.availableGeometry()
+                popup_origin = popup.mapToGlobal(qt_core.QPoint(0, 0))
+                popup_bounds = qt_core.QRect(popup_origin, popup.size())
+                result["within_work_area"] = available.contains(popup_bounds)
+                below_y = theme_combo.mapToGlobal(qt_core.QPoint(0, theme_combo.height())).y() + 2
+                below_space = available.bottom() + 1 - below_y
+                result["below_fits"] = below_space >= popup.height()
+                result["below_selected_when_possible"] = below_space < popup.height() or popup_origin.y() == below_y
+            except (AssertionError, AttributeError, StopIteration) as error:
+                result["error"] = error
+            finally:
+                if theme_combo is not None:
+                    theme_combo.hidePopup()
+                if dialog is not None:
+                    dialog.reject()
+
+        QtCore.QTimer.singleShot(0, inspect_dialog)
+        window._open_settings()
+
+        assert "error" not in result
+        assert result["all_rows_fit"] is True
+        assert result["within_work_area"] is True
+        assert result["below_fits"] is True
+        assert result["below_selected_when_possible"] is True
+        window.close()
+
     def test_apply_closes_without_persisting(
         self,
         tmp_path: Path,
@@ -129,7 +188,7 @@ class TestSettingsDialog:
                     if isinstance(widget, qt_widgets.QDialog) and widget.isVisible()
                 )
                 buttons = {button.text(): button for button in dialog.findChildren(qt_widgets.QPushButton)}
-                assert {"Apply", "Apply and save", "Cancel", "Reset defaults"} <= buttons.keys()
+                assert {"Apply", "Save", "Cancel", "Reset defaults"} <= buttons.keys()
                 theme_combo = dialog.findChild(qt_widgets.QComboBox, "themeMode")
                 assert theme_combo is not None
                 assert [theme_combo.itemText(index) for index in range(theme_combo.count())] == [
@@ -201,7 +260,7 @@ class TestSettingsDialog:
                 assert theme_combo is not None
                 cache_edit.setText(str(tmp_path / "saved-cache"))
                 theme_combo.setCurrentIndex(2)
-                buttons["Apply and save"].click()
+                buttons["Save"].click()
                 result["saved_path"] = load_settings(settings_path).cache_directory
                 result["saved_theme_mode"] = load_settings(settings_path).theme_mode
                 result["dialog_closed"] = not dialog.isVisible()
