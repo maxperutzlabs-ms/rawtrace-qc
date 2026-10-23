@@ -74,9 +74,13 @@ class Theme:
     outline_teal_button_hover: str = "#E3F4F3"
 
     # Header and brand colors
+    header_logo: str = (
+        _RESOURCES_DIRECTORY / "perutz-ms-facility_logo-inverted.svg"
+    ).as_posix()
+    header_divider: str = "rgba(255, 255, 255, 0.25)"
     header_background: str = "#063853"
     header_title: str = "#ffffff"
-    header_subtitle: str = "#b7d9d9"
+    header_version: str = "#B7D2DE"
     accent: str = "#40B7B5"
     accent_hover: str = "#369c9a"
     accent_text: str = "#063853"
@@ -169,9 +173,13 @@ DARK_THEME = Theme(
     outline_teal_button_border="#0F7C7A",
     outline_teal_button_text="#40B7B5",
     outline_teal_button_hover="#1b3a3c",
+    header_logo=(
+        _RESOURCES_DIRECTORY / "perutz-ms-facility_logo-inverted.svg"
+    ).as_posix(),
+    header_divider="rgba(255, 255, 255, 0.25)",
     header_background="#0b283b",
     header_title="#ffffff",
-    header_subtitle="#85c5c3",
+    header_version="#B7D2DE",
     accent="#40B7B5",
     accent_hover="#4ed1cf",
     accent_text="#063853",
@@ -383,6 +391,14 @@ QFrame#header {
     border: 0;
     border-radius: 12px;
 }
+QFrame#headerDivider {
+    background-color: $header_divider;
+    border: none;
+    min-width: 1px;
+    max-width: 1px;
+    min-height: 32px;
+    max-height: 32px;
+}
 QFrame#header QLabel {
     background: transparent;
     color: $header_title;
@@ -392,11 +408,12 @@ QLabel#appTitle {
     font-size: 22px;
     font-weight: 700;
 }
-QLabel#appSubtitle, QLabel#muted {
+QLabel#muted {
     color: $text_muted;
 }
-QFrame#header QLabel#appSubtitle {
-    color: $header_subtitle;
+QLabel#appVersion {
+    color: $header_version;
+    font-size: 12.5px;
 }
 QLabel#count, QLabel#subheading {
     color: $accent;

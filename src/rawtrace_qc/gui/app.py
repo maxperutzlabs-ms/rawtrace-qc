@@ -6,6 +6,7 @@ import sys
 import webbrowser
 from dataclasses import replace
 from importlib import import_module
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
@@ -577,6 +578,7 @@ def create_window(
             theme = resolve_theme(self._settings.theme_mode, qt_gui)
             application = qt_widgets.QApplication.instance()
             apply_theme(application if application is not None else self, theme, qt_gui)
+            self._header_logo.load(theme.header_logo)
             self.remove_highlighted_button.setIcon(
                 self._action_icon(
                     "trash-icon.svg",
@@ -604,15 +606,52 @@ def create_window(
             header.setObjectName("header")
             header_layout = qt_widgets.QHBoxLayout(header)
             header_layout.setContentsMargins(20, 10, 20, 10)
-            header_text_layout = qt_widgets.QVBoxLayout()
-            header_text_layout.setSpacing(2)
+            header_layout.setSpacing(16)
+            theme = resolve_theme(self._settings.theme_mode, qt_gui)
+            svg_renderer = import_module("PySide6.QtSvg").QSvgRenderer(
+                theme.header_logo
+            )
+            view_box = svg_renderer.viewBoxF()
+            logo_width = (
+                int(round(40 * view_box.width() / view_box.height()))
+                if view_box.height() > 0
+                else 111
+            )
+            self._header_logo = import_module("PySide6.QtSvgWidgets").QSvgWidget(header)
+            self._header_logo.load(theme.header_logo)
+            self._header_logo.setFixedSize(logo_width, 40)
+            self._header_logo.setToolTip("Perutz Mass Spec Facility")
+            self._header_logo.setAccessibleName("Perutz Mass Spec Facility")
+            header_layout.addWidget(
+                self._header_logo, 0, qt_core.Qt.AlignmentFlag.AlignVCenter
+            )
+            header_divider = qt_widgets.QFrame(header)
+            header_divider.setObjectName("headerDivider")
+            header_divider.setFixedSize(1, 32)
+            header_layout.addWidget(
+                header_divider, 0, qt_core.Qt.AlignmentFlag.AlignVCenter
+            )
+            header_title_layout = qt_widgets.QHBoxLayout()
+            header_title_layout.setContentsMargins(0, 0, 0, 0)
+            header_title_layout.setSpacing(10)
             title = qt_widgets.QLabel("rawtrace-qc")
             title.setObjectName("appTitle")
-            subtitle = qt_widgets.QLabel("Raw-file review  /  report desk")
-            subtitle.setObjectName("appSubtitle")
-            header_text_layout.addWidget(title)
-            header_text_layout.addWidget(subtitle)
-            header_layout.addLayout(header_text_layout)
+            try:
+                app_version = version("rawtrace-qc")
+            except PackageNotFoundError:
+                app_version = "0.1.0"
+            version_label = qt_widgets.QLabel(
+                app_version if app_version.startswith("v") else f"v{app_version}"
+            )
+            version_label.setObjectName("appVersion")
+            header_title_layout.addWidget(
+                title, 0, qt_core.Qt.AlignmentFlag.AlignBaseline
+            )
+            header_title_layout.addWidget(
+                version_label, 0, qt_core.Qt.AlignmentFlag.AlignBaseline
+            )
+            header_title_layout.setAlignment(qt_core.Qt.AlignmentFlag.AlignVCenter)
+            header_layout.addLayout(header_title_layout)
             header_layout.addStretch()
             self.settings_button = qt_widgets.QPushButton()
             self.settings_button.setObjectName("headerSettings")
