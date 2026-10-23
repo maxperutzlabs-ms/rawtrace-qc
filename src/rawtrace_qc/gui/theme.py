@@ -42,9 +42,9 @@ class Theme:
 
     # Input and standard button surfaces
     input_background: str = "#fbfdfd"
-    button_background: str = "#e8f1f2"
+    button_background: str = "#E8F1F4"
     button_hover: str = "#d7ecec"
-    button_disabled: str = "#e8f1f2"
+    button_disabled: str = "#E8F1F4"
 
     # Text colors
     text_primary: str = "#063853"
@@ -93,7 +93,7 @@ class Theme:
     scan_button_hover: str = "#c92f34"
 
     # Borders and selection colors
-    border: str = "#d7e3e5"
+    border: str = "#D5E1E6"
     border_input: str = "#bfd1d5"
     border_strong: str = "#b7cdd0"
     selection_background: str = "#40B7B5"
@@ -117,7 +117,7 @@ class Theme:
     splitter_handle: str = "#b7d9d9"
 
     # Section heading colors
-    header_section_background: str = "#e8f1f2"
+    header_section_background: str = "#E8F1F4"
     header_section_text: str = "#063853"
 
     # Tooltip colors
