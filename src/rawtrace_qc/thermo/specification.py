@@ -28,6 +28,6 @@ THERMO_HELPER_SPECIFICATION = ThermoHelperSpecification(
         "https://github.com/maxperutzlabs-ms/thermo-scan-header-extractor/"
         "releases/download/v0.1.0/ThermoScanHeaderExtractor-v0.1.0-win-x64.zip"
     ),
-    sha256="d5bae1134c3d678037c68bd992fec35eef8374f996700df98294ae2cc0be939a",
+    sha256="6aeea856ff317d393f0ec7de34f09675b092f26e1671cb298cbf8af34decb882",
     executable_name="ThermoScanHeaderExtractor.exe",
 )
