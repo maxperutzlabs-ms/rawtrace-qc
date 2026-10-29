@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import time
 from dataclasses import replace
+from datetime import timedelta
 from pathlib import Path
 from urllib.error import HTTPError
 
@@ -104,6 +106,35 @@ class TestGetOrDownloadThermoHelperArchive:
             resolver.get_or_download_thermo_helper_archive(specification=specification, cache_directory=cache_directory)
 
         assert not (cache_directory / specification.asset_name).exists()
+
+
+class TestExpireStaleTestCache:
+    @pytest.mark.parametrize(
+        ("stamp_age_hours", "expect_purged"), [(25, True), (23, False), (None, True)], ids=["old", "recent", "no-stamp"]
+    )
+    def test_purges_cache_only_when_stamp_is_missing_or_older_than_max_age(
+        self, tmp_path: Path, stamp_age_hours: float | None, expect_purged: bool
+    ) -> None:
+        cache_root = tmp_path / "thermo-helper"
+        cache_root.mkdir()
+        (cache_root / "payload.bin").write_bytes(b"cached")
+        if stamp_age_hours is not None:
+            stamp_time = time.time() - timedelta(hours=stamp_age_hours).total_seconds()
+            (cache_root / ".cache-created-at").write_text(str(stamp_time), encoding="utf-8")
+
+        purged = resolver.expire_stale_test_cache(cache_root=cache_root)
+
+        assert purged is expect_purged
+        assert (cache_root / "payload.bin").exists() is not expect_purged
+        assert (cache_root / ".cache-created-at").is_file()
+
+    def test_creates_cache_root_with_stamp_when_missing(self, tmp_path: Path) -> None:
+        cache_root = tmp_path / "thermo-helper"
+
+        purged = resolver.expire_stale_test_cache(cache_root=cache_root)
+
+        assert purged is False
+        assert (cache_root / ".cache-created-at").is_file()
 
 
 class TestResolveIntegrationThermoHelper:

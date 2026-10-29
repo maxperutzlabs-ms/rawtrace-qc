@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import shutil
 import tempfile
+import time
+from datetime import timedelta
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 
@@ -30,6 +33,37 @@ from rawtrace_qc.thermo import (
 _TESTS_ROOT = Path(__file__).resolve().parents[1]
 TEST_HELPER_CACHE_DIR = _TESTS_ROOT / ".cache" / "thermo-helper"
 TEST_HELPER_ARCHIVE_CACHE_DIR = TEST_HELPER_CACHE_DIR / "archives"
+TEST_HELPER_CACHE_MAX_AGE = timedelta(hours=24)
+_CACHE_STAMP_NAME = ".cache-created-at"
+
+
+def expire_stale_test_cache(
+    cache_root: Path = TEST_HELPER_CACHE_DIR, max_age: timedelta = TEST_HELPER_CACHE_MAX_AGE
+) -> bool:
+    """Delete the whole helper test cache once it is older than `max_age`.
+
+    Cache age is tracked by a stamp file holding the creation time as a Unix
+    timestamp, so file modification times are never consulted. A cache without a
+    readable stamp is treated as expired. A fresh stamp is written whenever the
+    cache is created or purged.
+
+    Args:
+        cache_root: Root of the cache to expire. Defaults to `tests/.cache/thermo-helper`.
+        max_age: Maximum cache age before it is purged. Defaults to 24 hours.
+
+    Returns:
+        True if an existing cache was deleted, otherwise False.
+    """
+    stamp_path = cache_root / _CACHE_STAMP_NAME
+    purged = False
+    if cache_root.exists():
+        if _read_cache_age(stamp_path) <= max_age.total_seconds():
+            return False
+        shutil.rmtree(cache_root)
+        purged = True
+    cache_root.mkdir(parents=True)
+    stamp_path.write_text(str(time.time()), encoding="utf-8")
+    return purged
 
 
 def get_or_download_thermo_helper_archive(
@@ -151,6 +185,13 @@ def resolve_integration_thermo_helper(
     if cache_status.state is ThermoHelperState.INVALID_VERSION:
         raise ThermoHelperVersionError(cache_status.message)
     raise RuntimeError(f"Thermo helper is not usable: {cache_status.message}")
+
+
+def _read_cache_age(stamp_path: Path) -> float:
+    try:
+        return time.time() - float(stamp_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return float("inf")
 
 
 def _is_transient_network_failure(error: ThermoHelperDownloadError) -> bool:

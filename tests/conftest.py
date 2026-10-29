@@ -6,11 +6,16 @@ from pathlib import Path
 import pytest
 
 from tests.support.collection import tag_test_items
-from tests.support.thermo_helper import resolve_integration_thermo_helper
+from tests.support.thermo_helper import expire_stale_test_cache, resolve_integration_thermo_helper
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     tag_test_items(items)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _expire_stale_thermo_cache() -> None:
+    expire_stale_test_cache()
 
 
 @pytest.fixture(scope="session")
