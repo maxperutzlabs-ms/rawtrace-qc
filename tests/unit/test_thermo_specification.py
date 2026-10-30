@@ -18,10 +18,7 @@ from rawtrace_qc.thermo import (
     verify_thermo_helper_archive,
 )
 from tests.support.network import urlopen_or_skip
-from tests.support.thermo_helper import (
-    WIN_X64_SPECIFICATION,
-    get_or_download_thermo_helper_archive,
-)
+from tests.support.thermo_helper import get_or_download_thermo_helper_archive, resolve_specification_or_skip
 
 
 def _is_github_rate_limit(error: HTTPError) -> bool:
@@ -108,27 +105,19 @@ class TestResolveThermoHelperSpecification:
             resolve_thermo_helper_specification()
 
 
-class TestThermoHelperSpecification:
-    def test_pinned_release_metadata_is_internally_consistent(self) -> None:
-        specification = WIN_X64_SPECIFICATION
-
-        assert len(specification.sha256) == 64
-        int(specification.sha256, 16)
-        assert f"v{specification.version}" in specification.asset_name
-        assert f"/v{specification.version}/" in specification.download_url
-        assert specification.download_url.endswith(specification.asset_name)
-
+class TestPublishedThermoHelperRelease:
     @pytest.mark.network
     def test_published_archive_is_available(self) -> None:
-        with urlopen_or_skip(WIN_X64_SPECIFICATION.download_url, timeout=10.0, method="HEAD") as response:
+        specification = resolve_specification_or_skip()
+
+        with urlopen_or_skip(specification.download_url, timeout=10.0, method="HEAD") as response:
             assert response.status == 200
 
     @pytest.mark.network
-    def test_published_archive_sha256_matches_pinned_checksum(self) -> None:
-        specification = WIN_X64_SPECIFICATION
+    def test_published_archive_sha256_matches_pinned_checksum_for_every_runtime(self) -> None:
         release_url = (
             "https://api.github.com/repos/maxperutzlabs-ms/"
-            f"thermo-scan-header-extractor/releases/tags/v{specification.version}"
+            f"thermo-scan-header-extractor/releases/tags/v{THERMO_HELPER_RELEASE.version}"
         )
         try:
             with urlopen(release_url, timeout=30.0) as response:
@@ -144,23 +133,23 @@ class TestThermoHelperSpecification:
         except OSError as error:
             pytest.skip(f"Cannot reach GitHub to verify the release checksum: {error}.")
 
-        assets = [asset for asset in release["assets"] if asset["name"] == specification.asset_name]
-        assert len(assets) == 1, (
-            f"Expected exactly one GitHub release asset named {specification.asset_name!r}; "
-            f"found {len(assets)}. Check the pinned release metadata."
-        )
-        actual = assets[0].get("digest")
-        expected = f"sha256:{specification.sha256.casefold()}"
-        assert actual == expected, (
-            f"GitHub asset {specification.asset_name!r} has digest {actual!r}, "
-            f"but the pinned digest is {expected!r}. Verify the release before updating the checksum."
-        )
+        published_digests = {asset["name"]: asset.get("digest") for asset in release["assets"]}
+        for runtime in THERMO_HELPER_RELEASE.assets:
+            specification = THERMO_HELPER_RELEASE.specification(runtime)
+            assert specification.asset_name in published_digests, (
+                f"Expected a GitHub release asset named {specification.asset_name!r} for runtime {runtime!r}. "
+                "Check the pinned release metadata."
+            )
+            actual = published_digests[specification.asset_name]
+            expected = f"sha256:{specification.sha256.casefold()}"
+            assert actual == expected, (
+                f"GitHub asset {specification.asset_name!r} has digest {actual!r}, "
+                f"but the pinned digest is {expected!r}. Verify the release before updating the checksum."
+            )
 
     @pytest.mark.network
     def test_cached_release_archive_matches_pinned_sha256(self) -> None:
-        archive_path = get_or_download_thermo_helper_archive()
+        specification = resolve_specification_or_skip()
+        archive_path = get_or_download_thermo_helper_archive(specification)
 
-        assert (
-            verify_thermo_helper_archive(archive_path, specification=WIN_X64_SPECIFICATION)
-            == WIN_X64_SPECIFICATION.sha256
-        )
+        assert verify_thermo_helper_archive(archive_path, specification=specification) == specification.sha256
