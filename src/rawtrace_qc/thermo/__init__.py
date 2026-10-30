@@ -25,20 +25,31 @@ from rawtrace_qc.thermo.runner import (
     build_thermo_helper_command,
     run_thermo_helper,
 )
+from rawtrace_qc.thermo.runtime import detect_runtime
 from rawtrace_qc.thermo.specification import (
+    RUNTIME_FALLBACKS,
     THERMO_HELPER_NAME,
+    THERMO_HELPER_RELEASE,
     THERMO_HELPER_SPECIFICATION,
+    ThermoHelperAsset,
+    ThermoHelperRelease,
     ThermoHelperSpecification,
+    resolve_thermo_helper_specification,
 )
 
 __all__ = [
+    "RUNTIME_FALLBACKS",
     "THERMO_HELPER_NAME",
+    "THERMO_HELPER_RELEASE",
     "THERMO_HELPER_SPECIFICATION",
+    "ThermoHelperAsset",
+    "ThermoHelperRelease",
     "ThermoHelperSpecification",
     "ThermoHelperState",
     "ThermoHelperStatus",
     "accept_thermo_license",
     "build_thermo_helper_command",
+    "detect_runtime",
     "download_thermo_helper_archive",
     "extract_thermo_helper_archive",
     "execute_helper_process",
@@ -49,6 +60,7 @@ __all__ = [
     "install_thermo_helper",
     "locate_thermo_helper",
     "query_helper_version",
+    "resolve_thermo_helper_specification",
     "run_thermo_helper",
     "verify_helper_version",
     "verify_thermo_helper_archive",
