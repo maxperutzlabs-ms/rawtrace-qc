@@ -1,0 +1,83 @@
+# Lints, type-checks, and runs the test suite on all supported platforms and
+# Python versions using the locked dependencies from `uv.lock`.
+
+name: CI
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint and type-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
+        python-version: "3.12"
+
+    - name: Install dependencies
+      run: uv sync --locked --all-extras
+
+    - name: Ruff lint
+      run: uv run ruff check .
+
+    - name: Ruff format
+      run: uv run ruff format --check .
+
+    - name: Pyrefly
+      run: uv run pyrefly check
+
+  test:
+    name: Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.12", "3.13", "3.14"]
+    env:
+      # Run Qt without a display server so the GUI tests work on headless runners.
+      QT_QPA_PLATFORM: offscreen
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Install Qt system libraries
+      if: runner.os == 'Linux'
+      run: sudo apt-get update && sudo apt-get install -y libegl1 libxkbcommon0 libfontconfig1
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install dependencies
+      run: uv sync --locked --all-extras
+
+    # The Thermo helper is Windows-only for now; extend the condition once it
+    # supports other platforms. Accepting the license here is intentional so
+    # the Thermo integration tests run instead of being skipped.
+    - name: Install Thermo helper and accept license
+      if: runner.os == 'Windows'
+      run: |
+        uv run rawtrace-qc thermo install
+        uv run rawtrace-qc thermo accept-license
+
+    - name: Run tests
+      run: uv run pytest --cov --cov-report=term
