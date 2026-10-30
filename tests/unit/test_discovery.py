@@ -227,16 +227,18 @@ class TestDiscover:
             discover(source_file)
 
     def test_symlinked_entries_are_not_followed(self, tmp_path: Path) -> None:
+        root = tmp_path / "root"
+        root.mkdir()
         target = tmp_path / "target"
         target.mkdir()
         _write_file(target / "sample.raw", 1)
-        link = tmp_path / "link"
+        link = root / "link"
         try:
             link.symlink_to(target, target_is_directory=True)
         except (OSError, NotImplementedError) as error:
             pytest.skip(f"symlinks are unavailable: {error}")
 
-        assert discover(tmp_path, _options()).candidates == ()
+        assert discover(root, _options()).candidates == ()
 
 
 class TestValidatePath:
