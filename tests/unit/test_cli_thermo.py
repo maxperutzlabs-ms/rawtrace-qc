@@ -13,13 +13,13 @@ from rawtrace_qc.thermo import locator as locator_module
 from tests.support.mock_helper import MockThermoHelper, create_mock_helper_file
 
 
-def _create_helper(data_directory: Path, *, license_accepted: bool = False) -> Path:
+def _create_helper(data_directory: Path) -> Path:
     helper_directory = helper_tool_directory(
         THERMO_HELPER_SPECIFICATION.tool_name,
         THERMO_HELPER_SPECIFICATION.version,
         data_directory=data_directory,
     )
-    return create_mock_helper_file(helper_directory, license_accepted=license_accepted)
+    return create_mock_helper_file(helper_directory)
 
 
 class TestThermoStatusCommand:
@@ -27,10 +27,10 @@ class TestThermoStatusCommand:
         ("state", "version", "licensed", "platform", "exit_code", "action"),
         [
             ("not_installed", None, False, "win32", 1, "thermo install"),
-            ("unlicensed", "0.1.0", False, "win32", 1, "thermo accept-license"),
+            ("unlicensed", THERMO_HELPER_SPECIFICATION.version, False, "win32", 1, "thermo accept-license"),
             ("invalid_version", "9.9.9", True, "win32", 1, "pinned helper version"),
             ("unsupported_platform", None, False, "linux", 1, "requires Windows"),
-            ("ready", "0.1.0", True, "win32", 0, "is ready"),
+            ("ready", THERMO_HELPER_SPECIFICATION.version, True, "win32", 0, "is ready"),
         ],
     )
     def test_status_reports_each_helper_state(
@@ -48,8 +48,10 @@ class TestThermoStatusCommand:
         data_directory = tmp_path / "appdata"
         helper = None
         if version is not None:
-            helper = _create_helper(data_directory, license_accepted=licensed)
-        mock_helper = MockThermoHelper(version=version or "0.1.0")
+            helper = _create_helper(data_directory)
+        mock_helper = MockThermoHelper(
+            version=version or THERMO_HELPER_SPECIFICATION.version, license_accepted=licensed
+        )
         monkeypatch.setattr(environment, "get_platform", lambda: platform)
         monkeypatch.setattr(locator_module, "execute_helper_process", mock_helper)
 
@@ -62,7 +64,8 @@ class TestThermoStatusCommand:
         if helper is None or platform != "win32":
             assert mock_helper.commands_run == []
         else:
-            assert [command[-1] for command in mock_helper.commands_run] == ["--version"]
+            expected_commands = [["--version"]] if state == "invalid_version" else [["--version"], []]
+            assert [command[1:] for command in mock_helper.commands_run] == expected_commands
 
 
 class TestThermoSetupCommands:
@@ -145,7 +148,7 @@ class TestThermoSetupCommands:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         data_directory = tmp_path / "appdata"
-        helper_path = _create_helper(data_directory)
+        _create_helper(data_directory)
         mock_helper = MockThermoHelper()
         monkeypatch.setattr(environment, "get_platform", lambda: "win32")
         monkeypatch.setattr(locator_module, "execute_helper_process", mock_helper)
@@ -155,23 +158,25 @@ class TestThermoSetupCommands:
         output = capsys.readouterr().out
         assert result == 0
         assert output.index("Mock Thermo license terms.") < output.index("Thermo license acceptance is recorded")
-        assert [command[-1] for command in mock_helper.commands_run] == [
-            "--version",
-            "--thermo-license",
-            "--version",
-            "--agree-to-terms",
+        assert [command[1:] for command in mock_helper.commands_run] == [
+            ["--version"],
+            ["--thermo-license"],
+            ["--version"],
+            [],
+            ["--agree-to-terms"],
+            [],
         ]
-        assert (helper_path.parent / ".thermo-license-accepted").is_file()
+        assert mock_helper.license_accepted is True
 
-    def test_accept_license_reports_failure_to_create_acceptance_marker(
+    def test_accept_license_reports_when_helper_does_not_record_acceptance(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         data_directory = tmp_path / "appdata"
-        helper_path = _create_helper(data_directory)
-        mock_helper = MockThermoHelper(writes_license_marker=False)
+        _create_helper(data_directory)
+        mock_helper = MockThermoHelper(records_acceptance=False)
         monkeypatch.setattr(environment, "get_platform", lambda: "win32")
         monkeypatch.setattr(locator_module, "execute_helper_process", mock_helper)
 
@@ -180,6 +185,5 @@ class TestThermoSetupCommands:
         captured = capsys.readouterr()
         assert result == 1
         assert "Mock Thermo license terms." in captured.out
-        assert "did not create the expected license marker" in captured.err
+        assert "still reports the Thermo license as not accepted" in captured.err
         assert "thermo accept-license" in captured.err
-        assert not (helper_path.parent / ".thermo-license-accepted").exists()

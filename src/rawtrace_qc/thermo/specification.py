@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 THERMO_HELPER_NAME = "thermoscanheaderextractor"
-THERMO_LICENSE_MARKER_NAME = ".thermo-license-accepted"
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,16 +17,15 @@ class ThermoHelperSpecification:
     sha256: str
     executable_name: str
     tool_name: str = THERMO_HELPER_NAME
-    license_marker_name: str = THERMO_LICENSE_MARKER_NAME
 
 
 THERMO_HELPER_SPECIFICATION = ThermoHelperSpecification(
-    version="0.1.0",
-    asset_name="ThermoScanHeaderExtractor-v0.1.0-win-x64.zip",
+    version="0.2.0",
+    asset_name="ThermoScanHeaderExtractor-v0.2.0-win-x64.zip",
     download_url=(
         "https://github.com/maxperutzlabs-ms/thermo-scan-header-extractor/"
-        "releases/download/v0.1.0/ThermoScanHeaderExtractor-v0.1.0-win-x64.zip"
+        "releases/download/v0.2.0/ThermoScanHeaderExtractor-v0.2.0-win-x64.zip"
     ),
-    sha256="6aeea856ff317d393f0ec7de34f09675b092f26e1671cb298cbf8af34decb882",
+    sha256="4b09265da895b67f810d33dc1a598545c0dc9d7bf3be0e5cccd308a7919a42f4",
     executable_name="ThermoScanHeaderExtractor.exe",
 )

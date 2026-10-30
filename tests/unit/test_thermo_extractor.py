@@ -107,7 +107,7 @@ class TestThermoExtractorUnit:
             extractor.extract(raw_file)
 
         assert not runner_called
-        assert [command[-1] for command in helper_process.commands_run] == ["--version"]
+        assert [command[1:] for command in helper_process.commands_run] == [["--version"], []]
 
     def test_empty_selection_creates_nothing_without_invoking_runner_or_locator(
         self,

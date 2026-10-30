@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from rawtrace_qc import environment
 from rawtrace_qc.errors import ThermoHelperLicenseError
-from rawtrace_qc.thermo import THERMO_LICENSE_MARKER_NAME, accept_thermo_license, get_thermo_license_text
+from rawtrace_qc.thermo import accept_thermo_license, get_thermo_license_text
 from tests.support.mock_helper import MockThermoHelper, create_mock_helper_file
 
 
@@ -28,7 +28,7 @@ class TestGetThermoLicenseText:
         result = get_thermo_license_text(executable)
 
         assert result == license_text
-        assert not (tmp_path / THERMO_LICENSE_MARKER_NAME).exists()
+        assert mock_runner.license_accepted is False
         assert mock_runner.commands_run == [
             [str(executable.resolve()), "--version"],
             [str(executable.resolve()), "--thermo-license"],
@@ -56,7 +56,7 @@ class TestGetThermoLicenseText:
 
 
 class TestAcceptThermoLicense:
-    def test_accepts_terms_and_confirms_the_install_marker(
+    def test_accepts_terms_and_confirms_acceptance_with_the_helper(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         executable = create_mock_helper_file(tmp_path)
@@ -65,10 +65,12 @@ class TestAcceptThermoLicense:
 
         accept_thermo_license(executable)
 
-        assert (tmp_path / THERMO_LICENSE_MARKER_NAME).is_file()
+        assert mock_runner.license_accepted is True
         assert mock_runner.commands_run == [
             [str(executable.resolve()), "--version"],
+            [str(executable.resolve())],
             [str(executable.resolve()), "--agree-to-terms"],
+            [str(executable.resolve())],
         ]
 
     def test_raises_when_helper_exits_abnormally(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -79,38 +81,28 @@ class TestAcceptThermoLicense:
         with pytest.raises(ThermoHelperLicenseError, match="failed with exit code 1"):
             accept_thermo_license(executable)
 
-        assert not (tmp_path / THERMO_LICENSE_MARKER_NAME).exists()
+        assert mock_runner.license_accepted is False
 
-    def test_raises_when_successful_helper_does_not_create_marker(
+    def test_raises_when_helper_still_reports_license_not_accepted(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         executable = create_mock_helper_file(tmp_path)
-        mock_runner = MockThermoHelper(writes_license_marker=False)
+        mock_runner = MockThermoHelper(records_acceptance=False)
         monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
 
-        with pytest.raises(ThermoHelperLicenseError, match="did not create the expected license marker"):
+        with pytest.raises(ThermoHelperLicenseError, match="still reports the Thermo license as not accepted"):
             accept_thermo_license(executable)
 
-    def test_is_idempotent_when_this_installation_is_already_accepted(
+    def test_does_not_run_acceptance_when_helper_reports_license_accepted(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        executable = create_mock_helper_file(tmp_path, license_accepted=True)
-        mock_runner = MockThermoHelper(os_error=OSError("must not run"))
+        executable = create_mock_helper_file(tmp_path)
+        mock_runner = MockThermoHelper(license_accepted=True)
         monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
 
         accept_thermo_license(executable)
 
-        assert mock_runner.commands_run == []
-
-    def test_accepts_only_the_selected_installation(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        first_install = tmp_path / "install-one"
-        second_install = tmp_path / "install-two"
-        first_executable = create_mock_helper_file(first_install)
-        create_mock_helper_file(second_install)
-        mock_runner = MockThermoHelper()
-        monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
-
-        accept_thermo_license(first_executable)
-
-        assert (first_install / THERMO_LICENSE_MARKER_NAME).is_file()
-        assert not (second_install / THERMO_LICENSE_MARKER_NAME).exists()
+        assert mock_runner.commands_run == [
+            [str(executable.resolve()), "--version"],
+            [str(executable.resolve())],
+        ]

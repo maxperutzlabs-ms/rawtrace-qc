@@ -17,9 +17,15 @@ from rawtrace_qc.errors import (
 )
 from rawtrace_qc.thermo.specification import (
     THERMO_HELPER_SPECIFICATION,
-    THERMO_LICENSE_MARKER_NAME,
     ThermoHelperSpecification,
 )
+
+# Exit code the helper returns when the current user has not accepted the
+# Thermo license terms.
+_LICENSE_NOT_ACCEPTED_EXIT_CODE = 4
+# Exit code the helper returns for a bare invocation (no input file) once the
+# license check has passed.
+_USAGE_EXIT_CODE = 1
 
 
 class ThermoHelperState(StrEnum):
@@ -179,8 +185,6 @@ def get_thermo_helper_status(
             expected_version=specification.version,
         )
 
-    license_accepted = is_license_accepted(candidate, specification.license_marker_name)
-
     try:
         reported_version = query_helper_version(candidate)
     except ThermoHelperVersionError as error:
@@ -188,7 +192,7 @@ def get_thermo_helper_status(
             state=ThermoHelperState.INVALID_VERSION,
             path=candidate,
             version=None,
-            license_accepted=license_accepted,
+            license_accepted=False,
             message=(
                 f"ThermoScanHeaderExtractor at {candidate} has an unreadable "
                 f"version: {error}"
@@ -201,11 +205,27 @@ def get_thermo_helper_status(
             state=ThermoHelperState.INVALID_VERSION,
             path=candidate,
             version=reported_version,
-            license_accepted=license_accepted,
+            license_accepted=False,
             message=(
                 f"ThermoScanHeaderExtractor at {candidate} reported version "
                 f"{reported_version!r}, but expected {specification.version!r}. "
                 f"Please install version {specification.version!r}."
+            ),
+            expected_version=specification.version,
+        )
+
+    try:
+        license_accepted = is_license_accepted(candidate)
+    except ThermoHelperLicenseError as error:
+        return ThermoHelperStatus(
+            state=ThermoHelperState.UNLICENSED,
+            path=candidate,
+            version=reported_version,
+            license_accepted=False,
+            message=(
+                f"ThermoScanHeaderExtractor at {candidate} is installed "
+                f"(version {reported_version}), but its license state could "
+                f"not be determined: {error}"
             ),
             expected_version=specification.version,
         )
@@ -379,23 +399,52 @@ def query_helper_version(
 
 def is_license_accepted(
     executable_path: Path,
-    marker_name: str = THERMO_LICENSE_MARKER_NAME,
+    *,
+    timeout: float = 10.0,
 ) -> bool:
-    """Return whether the Thermo license agreement has been accepted.
+    """Return whether the helper reports the Thermo license as accepted.
 
-    Checks for the presence of the license marker file beside the helper
-    executable.
+    The helper is the authority on its license state; where it records
+    acceptance is not inspected. The helper is invoked without arguments: it
+    checks acceptance before parsing arguments, so it exits with code 4 when
+    the terms have not been accepted and with its usage exit code 1 otherwise.
+    This probe never accepts the terms or changes the license state.
 
     Args:
         executable_path: Path to the ThermoScanHeaderExtractor executable.
-        marker_name: Marker filename. Defaults to
-            `THERMO_LICENSE_MARKER_NAME`.
+        timeout: Maximum time to wait in seconds. Defaults to 10.0.
 
     Returns:
-        True if the license marker file exists, False otherwise.
+        True if the helper reports the license as accepted, False otherwise.
+
+    Raises:
+        ThermoHelperLicenseError: If the helper fails to run, times out, or
+            exits with an unexpected code.
     """
-    marker = executable_path.parent / marker_name
-    return marker.is_file()
+    try:
+        result = execute_helper_process([executable_path], timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        raise ThermoHelperLicenseError(
+            f"ThermoScanHeaderExtractor at {executable_path} timed out after "
+            f"{timeout} seconds when checking license acceptance."
+        ) from error
+    except OSError as error:
+        raise ThermoHelperLicenseError(
+            f"Failed to execute ThermoScanHeaderExtractor at "
+            f"{executable_path} when checking license acceptance: {error}."
+        ) from error
+
+    if result.returncode == _LICENSE_NOT_ACCEPTED_EXIT_CODE:
+        return False
+    if result.returncode == _USAGE_EXIT_CODE:
+        return True
+
+    stderr_sample = result.stderr.strip()
+    detail = f": {stderr_sample}" if stderr_sample else ""
+    raise ThermoHelperLicenseError(
+        f"ThermoScanHeaderExtractor at {executable_path} exited with unexpected "
+        f"code {result.returncode} when checking license acceptance{detail}."
+    )
 
 
 def execute_helper_process(

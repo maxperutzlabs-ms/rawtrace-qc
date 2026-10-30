@@ -78,7 +78,6 @@ class TestInstallThermoHelper:
         assert executable == managed_directory / specification.executable_name
         assert executable.read_bytes() == b"MZmock-helper"
         assert (managed_directory / "ThermoScanHeaderExtractor.dll").read_bytes() == b"mock-dependency"
-        assert not (managed_directory / ".thermo-license-accepted").exists()
         assert archive_path.is_file()
         _assert_no_staging_directories(data_directory, specification)
 
@@ -101,7 +100,6 @@ class TestInstallThermoHelper:
 
         assert executable.is_file()
         assert len(downloads) == 1
-        assert not (executable.parent / ".thermo-license-accepted").exists()
 
     def test_rejects_checksum_mismatch_and_cleans_staging_state(self, tmp_path: Path) -> None:
         archive_path, specification = _create_archive(tmp_path)

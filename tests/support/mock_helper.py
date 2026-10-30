@@ -9,16 +9,18 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from rawtrace_qc.thermo.specification import THERMO_HELPER_SPECIFICATION, THERMO_LICENSE_MARKER_NAME
+from rawtrace_qc.thermo.specification import THERMO_HELPER_SPECIFICATION
 
 
 @dataclass
 class MockThermoHelper:
     """Mock runner that mimics the ThermoScanHeaderExtractor contract.
 
-    Supports version queries, license agreement marker creation, and
-    configurable failure modes (exit code, empty/garbage stdout, timeouts,
-    or execution errors).
+    Supports version queries, an in-memory license state that a bare invocation
+    reports (exit code 4 when not accepted, usage exit code 1 when accepted) and
+    `--agree-to-terms` sets, and configurable failure modes (exit code,
+    empty/garbage stdout, timeouts, or execution errors). Nothing is written to
+    disk, so tests never touch the real user's license state.
     """
 
     version: str = THERMO_HELPER_SPECIFICATION.version
@@ -30,7 +32,8 @@ class MockThermoHelper:
     license_text: str = "Mock Thermo license terms.\n"
     license_text_exit_code: int | None = None
     agreement_exit_code: int | None = None
-    writes_license_marker: bool = True
+    license_accepted: bool = False
+    records_acceptance: bool = True
     commands_run: list[list[str]] = field(default_factory=list)
 
     def __call__(self, args: Sequence[str | Path], *, timeout: float = 10.0) -> subprocess.CompletedProcess[str]:
@@ -49,6 +52,15 @@ class MockThermoHelper:
             command_exit_code = self.license_text_exit_code
         elif "--agree-to-terms" in str_args and self.agreement_exit_code is not None:
             command_exit_code = self.agreement_exit_code
+
+        if len(str_args) == 1 and command_exit_code == 0 and self.stdout is None:
+            if self.license_accepted:
+                return subprocess.CompletedProcess(
+                    args=str_args, returncode=1, stdout="", stderr="Usage: ThermoScanHeaderExtractor <input.raw>\n"
+                )
+            return subprocess.CompletedProcess(
+                args=str_args, returncode=4, stdout="", stderr="ERROR: Thermo license terms have not been accepted.\n"
+            )
 
         stdout = self.stdout
         if stdout is None and command_exit_code == 0:
@@ -69,10 +81,8 @@ class MockThermoHelper:
                 stderr=self.stderr or f"Process failed with exit code {command_exit_code}.",
             )
 
-        if "--agree-to-terms" in str_args and self.writes_license_marker:
-            exe_path = Path(str_args[0])
-            marker = exe_path.parent / THERMO_LICENSE_MARKER_NAME
-            marker.write_text("license accepted\n", encoding="utf-8")
+        if "--agree-to-terms" in str_args and self.records_acceptance:
+            self.license_accepted = True
 
         return subprocess.CompletedProcess(
             args=str_args,
@@ -82,16 +92,12 @@ class MockThermoHelper:
         )
 
 
-def create_mock_helper_file(
-    directory: Path, name: str = THERMO_HELPER_SPECIFICATION.executable_name, *, license_accepted: bool = False
-) -> Path:
-    """Create a mock helper binary file and optional license marker in a directory.
+def create_mock_helper_file(directory: Path, name: str = THERMO_HELPER_SPECIFICATION.executable_name) -> Path:
+    """Create a mock helper binary file in a directory.
 
     Args:
         directory: Destination folder.
         name: Executable filename. Defaults to the pinned helper executable name.
-        license_accepted: If True, also creates `.thermo-license-accepted`.
-            Defaults to False.
 
     Returns:
         The created executable path.
@@ -99,8 +105,6 @@ def create_mock_helper_file(
     directory.mkdir(parents=True, exist_ok=True)
     executable_path = directory / name
     executable_path.write_bytes(b"MZmock_executable_standin")
-    if license_accepted:
-        (directory / THERMO_LICENSE_MARKER_NAME).write_text("accepted\n", encoding="utf-8")
     return executable_path
 
 
@@ -121,11 +125,6 @@ if __name__ == "__main__":
         sys.exit(0)
     elif "--version" in sys.argv:
         sys.stdout.write(f"{THERMO_HELPER_SPECIFICATION.version}\n")
-        sys.exit(0)
-    elif "--agree-to-terms" in sys.argv:
-        marker = Path(sys.argv[0]).resolve().parent / THERMO_LICENSE_MARKER_NAME
-        marker.write_text("accepted\n", encoding="utf-8")
-        sys.stdout.write("License terms accepted.\n")
         sys.exit(0)
     elif "--thermo-license" in sys.argv:
         sys.stdout.write("Mock Thermo license terms.\n")

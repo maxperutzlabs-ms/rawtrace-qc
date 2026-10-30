@@ -154,7 +154,6 @@ class TestResolveIntegrationThermoHelper:
 
         monkeypatch.setattr(resolver, "get_thermo_helper_status", mock_status)
         monkeypatch.setattr(resolver, "install_thermo_helper", pytest.fail)
-        monkeypatch.setattr(resolver, "accept_thermo_license", pytest.fail)
         monkeypatch.setattr(resolver, "get_or_download_thermo_helper_archive", pytest.fail)
 
         result = resolver.resolve_integration_thermo_helper(cache_root=tmp_path / "cache")
@@ -175,14 +174,13 @@ class TestResolveIntegrationThermoHelper:
         )
         monkeypatch.setattr(resolver, "get_thermo_helper_status", lambda **kwargs: next(status_calls))
         monkeypatch.setattr(resolver, "install_thermo_helper", pytest.fail)
-        monkeypatch.setattr(resolver, "accept_thermo_license", pytest.fail)
         monkeypatch.setattr(resolver, "get_or_download_thermo_helper_archive", pytest.fail)
 
         result = resolver.resolve_integration_thermo_helper(cache_root=tmp_path / "cache-root")
 
         assert result == executable
 
-    def test_installs_then_accepts_only_when_each_status_requires_it(
+    def test_installs_then_skips_without_accepting_when_license_not_accepted(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
@@ -193,12 +191,10 @@ class TestResolveIntegrationThermoHelper:
                 _status(ThermoHelperState.NOT_INSTALLED),
                 _status(ThermoHelperState.NOT_INSTALLED),
                 _status(ThermoHelperState.UNLICENSED, executable),
-                _status(ThermoHelperState.READY, executable),
             ]
         )
         archive_path = tmp_path / "cache" / "archives" / "helper.zip"
         install_calls: list[tuple[Path, dict[str, object]]] = []
-        accept_calls: list[tuple[Path, dict[str, object]]] = []
         monkeypatch.setattr(resolver, "get_thermo_helper_status", lambda **kwargs: next(statuses))
 
         def mock_install(archive: Path, **kwargs: object) -> None:
@@ -206,13 +202,10 @@ class TestResolveIntegrationThermoHelper:
 
         monkeypatch.setattr(resolver, "get_or_download_thermo_helper_archive", lambda **kwargs: archive_path)
         monkeypatch.setattr(resolver, "install_thermo_helper", mock_install)
-        monkeypatch.setattr(
-            resolver, "accept_thermo_license", lambda path, **kwargs: accept_calls.append((path, kwargs))
-        )
 
-        result = resolver.resolve_integration_thermo_helper(cache_root=tmp_path / "cache")
+        with pytest.raises(pytest.skip.Exception, match="thermo accept-license"):
+            resolver.resolve_integration_thermo_helper(cache_root=tmp_path / "cache")
 
-        assert result == executable
         assert install_calls == [
             (
                 archive_path,
@@ -220,15 +213,6 @@ class TestResolveIntegrationThermoHelper:
                     "data_directory": (tmp_path / "cache").resolve(),
                     "specification": resolver.THERMO_HELPER_SPECIFICATION,
                     "timeout": 60.0,
-                },
-            )
-        ]
-        assert accept_calls == [
-            (
-                executable,
-                {
-                    "data_directory": (tmp_path / "cache").resolve(),
-                    "specification": resolver.THERMO_HELPER_SPECIFICATION,
                 },
             )
         ]

@@ -15,7 +15,6 @@ from rawtrace_qc.errors import (
     ThermoHelperArchiveError,
     ThermoHelperChecksumError,
     ThermoHelperDownloadError,
-    ThermoHelperLicenseError,
     ThermoHelperNotFoundError,
     ThermoHelperVersionError,
 )
@@ -23,7 +22,6 @@ from rawtrace_qc.thermo import (
     THERMO_HELPER_SPECIFICATION,
     ThermoHelperSpecification,
     ThermoHelperState,
-    accept_thermo_license,
     download_thermo_helper_archive,
     get_thermo_helper_status,
     install_thermo_helper,
@@ -133,9 +131,10 @@ def resolve_integration_thermo_helper(
     3. Check status at the test cache. If installed and licensed, return it.
      4. If not installed, install to the test cache. Transient network failures
          trigger a pytest skip; integrity and installation failures propagate.
-     5. If installed but unlicensed, accept the cache's license.
-     6. Return the ready executable. Version, license, and helper failures remain
-         test failures.
+     5. If the helper reports the license as not accepted, skip the test. The
+         license is never accepted on the user's behalf.
+     6. Return the ready executable. Version and helper failures remain test
+         failures.
 
     Args:
         specification: Pinned helper specification. Defaults to
@@ -170,18 +169,18 @@ def resolve_integration_thermo_helper(
             raise ThermoHelperVersionError(cache_status.message)
 
     if cache_status.state is ThermoHelperState.UNLICENSED:
-        if cache_status.path is None:
-            raise ThermoHelperLicenseError(cache_status.message)
-        accept_thermo_license(cache_status.path, data_directory=cache_data_dir, specification=specification)
-        cache_status = get_thermo_helper_status(data_directory=cache_data_dir, specification=specification)
+        # Acceptance is recorded per user by the helper, so tests must never
+        # accept the Thermo license on the developer's behalf.
+        pytest.skip(
+            "Thermo license terms are not accepted for this user; review and accept them with "
+            f"`rawtrace-qc thermo accept-license --helper-path {cache_status.path}` to run this test."
+        )
 
     if cache_status.state is ThermoHelperState.READY and cache_status.path is not None:
         return cache_status.path
 
     if cache_status.state is ThermoHelperState.NOT_INSTALLED:
         raise ThermoHelperNotFoundError(cache_status.message)
-    if cache_status.state is ThermoHelperState.UNLICENSED:
-        raise ThermoHelperLicenseError(cache_status.message)
     if cache_status.state is ThermoHelperState.INVALID_VERSION:
         raise ThermoHelperVersionError(cache_status.message)
     raise RuntimeError(f"Thermo helper is not usable: {cache_status.message}")

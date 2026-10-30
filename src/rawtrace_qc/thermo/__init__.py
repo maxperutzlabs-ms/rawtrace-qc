@@ -28,14 +28,12 @@ from rawtrace_qc.thermo.runner import (
 from rawtrace_qc.thermo.specification import (
     THERMO_HELPER_NAME,
     THERMO_HELPER_SPECIFICATION,
-    THERMO_LICENSE_MARKER_NAME,
     ThermoHelperSpecification,
 )
 
 __all__ = [
     "THERMO_HELPER_NAME",
     "THERMO_HELPER_SPECIFICATION",
-    "THERMO_LICENSE_MARKER_NAME",
     "ThermoHelperSpecification",
     "ThermoHelperState",
     "ThermoHelperStatus",

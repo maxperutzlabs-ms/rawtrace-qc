@@ -163,7 +163,7 @@ The helper remains separate because it uses Thermo's Windows-specific RAW access
 
 ### Pinned Release Specification
 
-The expected helper release is pinned in `rawtrace_qc.thermo.THERMO_HELPER_SPECIFICATION`. This specification defines the exact expected release version (`0.1.0`), asset archive name, official download URL, SHA-256 checksum digest, and executable name (`ThermoScanHeaderExtractor.exe`).
+The expected helper release is pinned in `rawtrace_qc.thermo.THERMO_HELPER_SPECIFICATION`. This specification defines the exact expected release version (`0.2.0`), asset archive name, official download URL, SHA-256 checksum digest, and executable name (`ThermoScanHeaderExtractor.exe`).
 
 ### Install the Helper
 
@@ -175,7 +175,7 @@ from pathlib import Path
 from rawtrace_qc.thermo import install_thermo_helper
 
 executable = install_thermo_helper()
-# Or install_thermo_helper(Path("/media/helper/ThermoScanHeaderExtractor-v0.1.0-win-x64.zip"))
+# Or install_thermo_helper(Path("/media/helper/ThermoScanHeaderExtractor-v0.2.0-win-x64.zip"))
 ```
 
 Both sources are checked against the pinned SHA-256 digest before extraction and installed through a temporary staging directory. The completed helper is atomically moved to `<user_data_dir>/tools/thermoscanheaderextractor/<version>/ThermoScanHeaderExtractor.exe`. Reinstalling the same archive is safe; an existing directory that does not match the pinned installation is left untouched and causes an installation conflict. Installation never executes the helper or accepts the Thermo license. Review and record explicit agreement through the library API described below.
@@ -191,19 +191,21 @@ The library locates the helper without side effects, searching in strict priorit
 
 ### Status and License Verification
 
-`get_thermo_helper_status()` inspects the helper state without side effects, returning a `ThermoHelperStatus` object. When no helper executable exists on disk, it returns immediately without running any subprocess. When an executable is present, it checks for license acceptance and verifies the reported version by executing `--version`.
+`get_thermo_helper_status()` inspects the helper state without side effects, returning a `ThermoHelperStatus` object. When no helper executable exists on disk, it returns immediately without running any subprocess. When an executable is present, it verifies the reported version by executing `--version` and, if the version matches, asks the helper whether the Thermo license has been accepted.
+
+The helper is the sole authority on its license state; rawtrace-qc does not inspect where or how acceptance is recorded (since helper v0.2.0 it is recorded per user). `is_license_accepted()` invokes the helper without arguments: the helper checks acceptance before parsing arguments and exits with code `4` when the terms have not been accepted, or with its usage exit code `1` otherwise. This check never accepts the terms or changes the license state.
 
 The status distinguishes at least:
 
 - `ThermoHelperState.NOT_INSTALLED`: No helper executable was found at the prioritized locations. No subprocess is executed.
 - `ThermoHelperState.UNSUPPORTED_PLATFORM`: The current platform is not Windows.
-- `ThermoHelperState.UNLICENSED`: The helper is installed and its version matches, but the license agreement marker (`.thermo-license-accepted`) is missing beside the executable.
+- `ThermoHelperState.UNLICENSED`: The helper is installed and its version matches, but it reports that the Thermo license has not been accepted, or its license state could not be determined.
 - `ThermoHelperState.INVALID_VERSION`: The helper is installed but returned an unreadable version, crashed, timed out, or reported a version that does not match the pinned specification.
-- `ThermoHelperState.READY`: The helper is installed, matches the expected version, and has the license marker present beside the executable.
+- `ThermoHelperState.READY`: The helper is installed, matches the expected version, and reports the Thermo license as accepted.
 
 ### License Review and Acceptance
 
-Use `get_thermo_license_text()` to retrieve the agreement for display without accepting it or creating the license marker. After the user has reviewed the agreement and explicitly agreed to it, call `accept_thermo_license()`. This library function invokes the helper's `--agree-to-terms` command when acceptance has not already been recorded, then verifies that the helper created its license marker. Both functions use the prioritized helper locations by default and support an explicit helper path.
+Use `get_thermo_license_text()` to retrieve the agreement for display without accepting it. After the user has reviewed the agreement and explicitly agreed to it, call `accept_thermo_license()`. This library function invokes the helper's `--agree-to-terms` command when the helper does not already report the license as accepted, then asks the helper again to confirm the acceptance. Both functions use the prioritized helper locations by default and support an explicit helper path.
 
 ```python
 from rawtrace_qc.thermo import accept_thermo_license, get_thermo_license_text
@@ -243,22 +245,22 @@ With no MS-level flags, both levels are selected. `--ms1` selects only MS1, `--m
 
 The command reports one `succeeded`, `skipped`, or `failed` outcome for each discovered candidate, with output paths or a reason. Discovery and traversal issues are listed separately because those paths were not extracted candidates. In a mixed-vendor batch, Thermo helper readiness is checked once before Thermo extraction. If it is not ready, each Thermo candidate is reported as skipped with the relevant setup guidance, while Bruker candidates continue normally. The command exits with code `0` only if every candidate succeeded and there were no discovery issues; it exits nonzero for any skip, extraction failure, or discovery issue, so scripts can use the exit code while parsing the per-candidate summary for detail.
 
-`thermo status` is read-only. It exits successfully only when the pinned helper is installed, its version matches, and its license marker is present. For an incomplete setup it prints the state and the corresponding setup command.
+`thermo status` is read-only. It exits successfully only when the pinned helper is installed, its version matches, and it reports the Thermo license as accepted. For an incomplete setup it prints the state and the corresponding setup command.
 
 Install the pinned release from its configured download URL, or provide a local archive for an offline installation:
 
 ```bash
 rawtrace-qc thermo install
-rawtrace-qc thermo install --from-zip D:\offline\ThermoScanHeaderExtractor-v0.1.0-win-x64.zip
+rawtrace-qc thermo install --from-zip D:\offline\ThermoScanHeaderExtractor-v0.2.0-win-x64.zip
 ```
 
-Installation verifies the pinned SHA-256 checksum and does not run the helper or accept its license. After reviewing Thermo's agreement, run the explicit acceptance command. It displays the agreement returned by the helper and records acceptance only for that helper installation:
+Installation verifies the pinned SHA-256 checksum and does not run the helper or accept its license. After reviewing Thermo's agreement, run the explicit acceptance command. It displays the agreement returned by the helper and has the helper record acceptance, which since helper v0.2.0 applies to the current user account rather than to one helper installation:
 
 ```bash
 rawtrace-qc thermo accept-license
 ```
 
-For a centrally managed installation, either install into a shared data root and pass the same `--data-directory` to status and acceptance, or point commands directly at the shared executable with `--helper-path`. A helper installed from a shared root is stored below `tools/thermoscanheaderextractor/<version>/`; a direct executable path may also name its containing directory. The account running acceptance needs permission to create the license marker beside that executable.
+For a centrally managed installation, either install into a shared data root and pass the same `--data-directory` to status and acceptance, or point commands directly at the shared executable with `--helper-path`. A helper installed from a shared root is stored below `tools/thermoscanheaderextractor/<version>/`; a direct executable path may also name its containing directory. Because acceptance is recorded per user, every account that runs extractions, including service accounts, must accept the terms once.
 
 ```bash
 rawtrace-qc thermo install --data-directory \\server\rawtrace-tools
@@ -268,7 +270,7 @@ rawtrace-qc thermo status --helper-path \\server\tools\ThermoScanHeaderExtractor
 rawtrace-qc thermo accept-license --helper-path \\server\tools\ThermoScanHeaderExtractor.exe
 ```
 
-The helper's release version, asset, and checksum are pinned by the installed `rawtrace-qc` release. To upgrade the helper, upgrade `rawtrace-qc` to a release with the newer pin, then run `rawtrace-qc thermo install`; use `--from-zip` when the matching release archive must be transferred offline. Versioned installations are kept separate, and a conflicting existing installation is not silently overwritten. Accept the Thermo agreement again only if the upgraded helper has its own unaccepted marker.
+The helper's release version, asset, and checksum are pinned by the installed `rawtrace-qc` release. To upgrade the helper, upgrade `rawtrace-qc` to a release with the newer pin, then run `rawtrace-qc thermo install`; use `--from-zip` when the matching release archive must be transferred offline. Versioned installations are kept separate, and a conflicting existing installation is not silently overwritten. Run `rawtrace-qc thermo status` after upgrading and accept the Thermo agreement again if the helper reports it as not accepted; acceptance recorded by helper v0.1.0 is not carried over to v0.2.0.
 
 ### Locating a Usable Helper
 

@@ -79,11 +79,12 @@ def accept_thermo_license(
     specification: ThermoHelperSpecification = THERMO_HELPER_SPECIFICATION,
     timeout: float = 10.0,
 ) -> None:
-    """Record acceptance of the Thermo license for one helper installation.
+    """Record acceptance of the Thermo license through the helper.
 
-    Runs the helper's explicit `--agree-to-terms` command only when the marker
-    beside the selected executable is absent. Success is confirmed by checking
-    that the helper created that installation's marker file.
+    Runs the helper's explicit `--agree-to-terms` command only when the helper
+    does not already report the license as accepted. Success is confirmed by
+    asking the helper again. Where the helper records acceptance is left to the
+    helper; since v0.2.0 it is recorded per user.
 
     Args:
         explicit_path: Optional helper executable or containing directory.
@@ -101,22 +102,22 @@ def accept_thermo_license(
         UnsupportedPlatformError: If the current platform is not Windows.
         ThermoHelperNotFoundError: If no helper executable is found.
         ThermoHelperVersionError: If the helper version is wrong or unreadable.
-        ThermoHelperLicenseError: If the helper fails or does not create its
-            license marker.
+        ThermoHelperLicenseError: If the helper fails, or still reports the
+            license as not accepted after the acceptance command.
     """
     executable = _resolve_thermo_helper(
         explicit_path,
         data_directory=data_directory,
         specification=specification,
     )
-    if locator.is_license_accepted(executable, specification.license_marker_name):
-        return
-
     locator.verify_helper_version(
         executable,
         expected_version=specification.version,
         timeout=timeout,
     )
+    if locator.is_license_accepted(executable, timeout=timeout):
+        return
+
     _run_license_command(
         executable,
         "--agree-to-terms",
@@ -124,12 +125,12 @@ def accept_thermo_license(
         timeout=timeout,
     )
 
-    if not locator.is_license_accepted(executable, specification.license_marker_name):
-        marker_path = executable.parent / specification.license_marker_name
+    if not locator.is_license_accepted(executable, timeout=timeout):
         raise ThermoHelperLicenseError(
             f"ThermoScanHeaderExtractor at {executable} exited successfully but "
-            f"did not create the expected license marker {marker_path}. Ensure "
-            "the helper directory is writable, then retry acceptance."
+            "still reports the Thermo license as not accepted. Run "
+            f"'{executable.name} --agree-to-terms' manually to see where the "
+            "helper records acceptance, then retry."
         )
 
 
