@@ -13,7 +13,6 @@ from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 from zipfile import BadZipFile, LargeZipFile, ZipFile, ZipInfo
 
-from rawtrace_qc import environment
 from rawtrace_qc.environment import helper_tool_directory
 from rawtrace_qc.errors import (
     ThermoHelperArchiveError,
@@ -21,11 +20,10 @@ from rawtrace_qc.errors import (
     ThermoHelperDownloadError,
     ThermoHelperInstallationError,
     ThermoHelperInstallConflictError,
-    UnsupportedPlatformError,
 )
 from rawtrace_qc.thermo.specification import (
-    THERMO_HELPER_SPECIFICATION,
     ThermoHelperSpecification,
+    resolve_thermo_helper_specification,
 )
 
 _INSTALL_MANIFEST_NAME = ".rawtrace-qc-thermo-helper.json"
@@ -35,7 +33,7 @@ def install_thermo_helper(
     archive_path: Path | str | None = None,
     *,
     data_directory: Path | str | None = None,
-    specification: ThermoHelperSpecification = THERMO_HELPER_SPECIFICATION,
+    specification: ThermoHelperSpecification | None = None,
     timeout: float = 60.0,
 ) -> Path:
     """Install the pinned Thermo helper from a download or local ZIP archive.
@@ -50,15 +48,16 @@ def install_thermo_helper(
             the archive from the pinned release URL.
         data_directory: Application data directory override. If None (default),
             use the platform-specific user data directory.
-        specification: Pinned helper release metadata. Defaults to
-            `THERMO_HELPER_SPECIFICATION`.
+        specification: Pinned helper release metadata. If None (default),
+            resolve the specification for the current host runtime.
         timeout: Maximum network timeout in seconds. Defaults to 60.0.
 
     Returns:
         The managed ThermoScanHeaderExtractor executable path.
 
     Raises:
-        UnsupportedPlatformError: If the current platform is not Windows.
+        UnsupportedPlatformError: If the current runtime has no pinned helper
+            release.
         ThermoHelperDownloadError: If the pinned archive cannot be downloaded.
         ThermoHelperChecksumError: If the source archive checksum is incorrect.
         ThermoHelperArchiveError: If the source is not a safe ZIP containing
@@ -67,12 +66,8 @@ def install_thermo_helper(
             already contains a different or unmanaged installation.
         ThermoHelperInstallationError: If staging or atomic publication fails.
     """
-    selected_platform = environment.get_platform()
-    if selected_platform != "win32":
-        raise UnsupportedPlatformError(
-            "ThermoScanHeaderExtractor installation requires Windows, but "
-            f"current platform is {selected_platform!r}."
-        )
+    if specification is None:
+        specification = resolve_thermo_helper_specification()
 
     version_directory = helper_tool_directory(
         specification.tool_name,
@@ -140,7 +135,7 @@ def install_thermo_helper(
 def download_thermo_helper_archive(
     destination: Path | str,
     *,
-    specification: ThermoHelperSpecification = THERMO_HELPER_SPECIFICATION,
+    specification: ThermoHelperSpecification | None = None,
     timeout: float = 60.0,
 ) -> Path:
     """Download the pinned release archive to a caller-selected temporary path.
@@ -151,19 +146,24 @@ def download_thermo_helper_archive(
     Args:
         destination: New path for the downloaded archive. Existing paths are
             not overwritten.
-        specification: Pinned helper release metadata. Defaults to
-            `THERMO_HELPER_SPECIFICATION`.
+        specification: Pinned helper release metadata. If None (default),
+            resolve the specification for the current host runtime.
         timeout: Maximum network timeout in seconds. Defaults to 60.0.
 
     Returns:
         The path containing the downloaded archive.
 
     Raises:
+        UnsupportedPlatformError: If no specification is given and the current
+            runtime has no pinned helper release.
         ThermoHelperDownloadError: If the server, network, or proxy prevents
             the download from completing.
         ThermoHelperInstallationError: If the temporary destination cannot be
             created or already exists.
     """
+    if specification is None:
+        specification = resolve_thermo_helper_specification()
+
     if timeout <= 0:
         raise ThermoHelperDownloadError(
             f"Download timeout must be greater than zero, got {timeout!r}."
@@ -268,22 +268,27 @@ def download_thermo_helper_archive(
 def verify_thermo_helper_archive(
     archive_path: Path | str,
     *,
-    specification: ThermoHelperSpecification = THERMO_HELPER_SPECIFICATION,
+    specification: ThermoHelperSpecification | None = None,
 ) -> str:
     """Verify a helper archive against the pinned SHA-256 checksum.
 
     Args:
         archive_path: Local path to the downloaded or user-supplied archive.
-        specification: Pinned helper release metadata. Defaults to
-            `THERMO_HELPER_SPECIFICATION`.
+        specification: Pinned helper release metadata. If None (default),
+            resolve the specification for the current host runtime.
 
     Returns:
         The verified lowercase SHA-256 digest.
 
     Raises:
+        UnsupportedPlatformError: If no specification is given and the current
+            runtime has no pinned helper release.
         ThermoHelperArchiveError: If the archive cannot be read.
         ThermoHelperChecksumError: If its digest differs from the pinned value.
     """
+    if specification is None:
+        specification = resolve_thermo_helper_specification()
+
     path = Path(archive_path).expanduser()
     digest = hashlib.sha256()
     try:
@@ -311,7 +316,7 @@ def extract_thermo_helper_archive(
     archive_path: Path | str,
     target_directory: Path | str,
     *,
-    specification: ThermoHelperSpecification = THERMO_HELPER_SPECIFICATION,
+    specification: ThermoHelperSpecification | None = None,
 ) -> Path:
     """Verify and safely extract the helper into a new staging directory.
 
@@ -322,17 +327,22 @@ def extract_thermo_helper_archive(
     Args:
         archive_path: Local path to the downloaded or user-supplied archive.
         target_directory: New directory used for temporary extraction.
-        specification: Pinned helper release metadata. Defaults to
-            `THERMO_HELPER_SPECIFICATION`.
+        specification: Pinned helper release metadata. If None (default),
+            resolve the specification for the current host runtime.
 
     Returns:
         The extracted helper executable path within `target_directory`.
 
     Raises:
+        UnsupportedPlatformError: If no specification is given and the current
+            runtime has no pinned helper release.
         ThermoHelperChecksumError: If the archive checksum does not match.
         ThermoHelperArchiveError: If the archive is corrupt, unsafe, or does
             not contain exactly one expected executable.
     """
+    if specification is None:
+        specification = resolve_thermo_helper_specification()
+
     archive_file = Path(archive_path).expanduser()
     requested_root = Path(target_directory).expanduser()
     if _path_exists(requested_root):

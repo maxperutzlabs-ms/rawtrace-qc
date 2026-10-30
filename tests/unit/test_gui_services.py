@@ -18,8 +18,8 @@ from rawtrace_qc.gui.reporting import ReportGenerationOptions, ReportStorageMode
 from rawtrace_qc.gui.thermo import ThermoToolManager
 from rawtrace_qc.models import ExtractionResult
 from rawtrace_qc.report import ReportAssetMode, ReportOptions
-from rawtrace_qc.thermo import THERMO_HELPER_SPECIFICATION
 from rawtrace_qc.traces import load_trace
+from tests.support.thermo_helper import WIN_X64_SPECIFICATION
 
 
 def _bruker_candidate(path: Path) -> DiscoveryCandidate:
@@ -99,7 +99,7 @@ class TestThermoToolManager:
 
         assert (
             manager.install_directory
-            == (data_directory / "tools" / "thermoscanheaderextractor" / THERMO_HELPER_SPECIFICATION.version).resolve()
+            == (data_directory / "tools" / "thermoscanheaderextractor" / WIN_X64_SPECIFICATION.version).resolve()
         )
         assert not data_directory.exists()
 
@@ -109,10 +109,10 @@ class TestThermoToolManager:
         executable_payload = b"thermo helper executable"
         archive_buffer = BytesIO()
         with ZipFile(archive_buffer, "w") as archive:
-            archive.writestr(THERMO_HELPER_SPECIFICATION.executable_name, executable_payload)
+            archive.writestr(WIN_X64_SPECIFICATION.executable_name, executable_payload)
         archive_payload = archive_buffer.getvalue()
         test_specification = replace(
-            THERMO_HELPER_SPECIFICATION,
+            WIN_X64_SPECIFICATION,
             download_url="https://example.test/pinned-helper.zip",
             sha256=hashlib.sha256(archive_payload).hexdigest(),
         )
@@ -136,7 +136,7 @@ class TestThermoToolManager:
     ) -> None:
         archive_payload = b"not the pinned archive"
         test_specification = replace(
-            THERMO_HELPER_SPECIFICATION, download_url="https://example.test/pinned-helper.zip", sha256="0" * 64
+            WIN_X64_SPECIFICATION, download_url="https://example.test/pinned-helper.zip", sha256="0" * 64
         )
         monkeypatch.setattr("rawtrace_qc.gui.thermo.THERMO_HELPER_SPECIFICATION", test_specification)
         monkeypatch.setattr("rawtrace_qc.gui.thermo.urlopen", lambda url, timeout: BytesIO(archive_payload))

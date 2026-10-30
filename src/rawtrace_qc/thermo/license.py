@@ -5,16 +5,14 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from rawtrace_qc import environment
 from rawtrace_qc.errors import (
     ThermoHelperLicenseError,
     ThermoHelperNotFoundError,
-    UnsupportedPlatformError,
 )
 from rawtrace_qc.thermo import locator
 from rawtrace_qc.thermo.specification import (
-    THERMO_HELPER_SPECIFICATION,
     ThermoHelperSpecification,
+    resolve_thermo_helper_specification,
 )
 
 
@@ -22,7 +20,7 @@ def get_thermo_license_text(
     explicit_path: Path | str | None = None,
     *,
     data_directory: Path | str | None = None,
-    specification: ThermoHelperSpecification = THERMO_HELPER_SPECIFICATION,
+    specification: ThermoHelperSpecification | None = None,
     timeout: float = 10.0,
 ) -> str:
     """Return the Thermo license agreement without accepting it.
@@ -35,19 +33,22 @@ def get_thermo_license_text(
             Defaults to None.
         data_directory: Application data directory override. If None (default),
             uses the platform-specific user data directory.
-        specification: Pinned helper release metadata. Defaults to
-            `THERMO_HELPER_SPECIFICATION`.
+        specification: Pinned helper release metadata. If None (default),
+            resolve the specification for the current host runtime.
         timeout: Maximum command time in seconds. Defaults to 10.0.
 
     Returns:
         The license agreement text printed by the helper.
 
     Raises:
-        UnsupportedPlatformError: If the current platform is not Windows.
+        UnsupportedPlatformError: If the current runtime has no pinned helper
+            release.
         ThermoHelperNotFoundError: If no helper executable is found.
         ThermoHelperVersionError: If the helper version is wrong or unreadable.
         ThermoHelperLicenseError: If the helper fails or returns empty text.
     """
+    if specification is None:
+        specification = resolve_thermo_helper_specification()
     executable = _resolve_thermo_helper(
         explicit_path,
         data_directory=data_directory,
@@ -76,7 +77,7 @@ def accept_thermo_license(
     explicit_path: Path | str | None = None,
     *,
     data_directory: Path | str | None = None,
-    specification: ThermoHelperSpecification = THERMO_HELPER_SPECIFICATION,
+    specification: ThermoHelperSpecification | None = None,
     timeout: float = 10.0,
 ) -> None:
     """Record acceptance of the Thermo license through the helper.
@@ -91,20 +92,23 @@ def accept_thermo_license(
             Defaults to None.
         data_directory: Application data directory override. If None (default),
             uses the platform-specific user data directory.
-        specification: Pinned helper release metadata. Defaults to
-            `THERMO_HELPER_SPECIFICATION`.
+        specification: Pinned helper release metadata. If None (default),
+            resolve the specification for the current host runtime.
         timeout: Maximum command time in seconds. Defaults to 10.0.
 
     Returns:
         None.
 
     Raises:
-        UnsupportedPlatformError: If the current platform is not Windows.
+        UnsupportedPlatformError: If the current runtime has no pinned helper
+            release.
         ThermoHelperNotFoundError: If no helper executable is found.
         ThermoHelperVersionError: If the helper version is wrong or unreadable.
         ThermoHelperLicenseError: If the helper fails, or still reports the
             license as not accepted after the acceptance command.
     """
+    if specification is None:
+        specification = resolve_thermo_helper_specification()
     executable = _resolve_thermo_helper(
         explicit_path,
         data_directory=data_directory,
@@ -140,13 +144,6 @@ def _resolve_thermo_helper(
     data_directory: Path | str | None,
     specification: ThermoHelperSpecification,
 ) -> Path:
-    current_platform = environment.get_platform()
-    if current_platform != "win32":
-        raise UnsupportedPlatformError(
-            "ThermoScanHeaderExtractor license operations require Windows, but "
-            f"current platform is {current_platform!r}."
-        )
-
     executable = locator.find_thermo_helper_path(
         explicit_path,
         data_directory=data_directory,

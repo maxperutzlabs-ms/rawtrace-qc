@@ -10,24 +10,26 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 
 import pytest
-from rawtrace_qc import environment
 from rawtrace_qc.errors import (
     ThermoHelperArchiveError,
     ThermoHelperChecksumError,
     ThermoHelperDownloadError,
     ThermoHelperNotFoundError,
     ThermoHelperVersionError,
+    UnsupportedPlatformError,
 )
 from rawtrace_qc.thermo import (
-    THERMO_HELPER_SPECIFICATION,
+    THERMO_HELPER_RELEASE,
     ThermoHelperSpecification,
     ThermoHelperState,
     download_thermo_helper_archive,
     get_thermo_helper_status,
     install_thermo_helper,
+    resolve_thermo_helper_specification,
     verify_thermo_helper_archive,
 )
 
+WIN_X64_SPECIFICATION = THERMO_HELPER_RELEASE.specification("win-x64")
 _TESTS_ROOT = Path(__file__).resolve().parents[1]
 TEST_HELPER_CACHE_DIR = _TESTS_ROOT / ".cache" / "thermo-helper"
 TEST_HELPER_ARCHIVE_CACHE_DIR = TEST_HELPER_CACHE_DIR / "archives"
@@ -64,8 +66,20 @@ def expire_stale_test_cache(
     return purged
 
 
+def resolve_specification_or_skip() -> ThermoHelperSpecification:
+    """Resolve the host helper specification or skip the requesting test.
+
+    Returns:
+        The helper specification for the current host runtime.
+    """
+    try:
+        return resolve_thermo_helper_specification()
+    except UnsupportedPlatformError as error:
+        pytest.skip(f"ThermoScanHeaderExtractor integration is not supported on this host: {error}")
+
+
 def get_or_download_thermo_helper_archive(
-    specification: ThermoHelperSpecification = THERMO_HELPER_SPECIFICATION,
+    specification: ThermoHelperSpecification | None = None,
     cache_directory: Path = TEST_HELPER_ARCHIVE_CACHE_DIR,
     timeout: float = 60.0,
 ) -> Path:
@@ -76,8 +90,8 @@ def get_or_download_thermo_helper_archive(
     network failures skip the network-dependent test that requested the archive.
 
     Args:
-        specification: Pinned helper release metadata. Defaults to
-            `THERMO_HELPER_SPECIFICATION`.
+        specification: Pinned helper release metadata. If None (default),
+            resolve the host specification, skipping the test on unsupported runtimes.
         cache_directory: Directory for cached release archives. Defaults to
             `tests/.cache/thermo-helper/archives`.
         timeout: Maximum network timeout in seconds. Defaults to 60.0.
@@ -90,6 +104,7 @@ def get_or_download_thermo_helper_archive(
         ThermoHelperChecksumError: If a downloaded archive fails checksum verification.
         ThermoHelperDownloadError: If a non-transient failure prevents downloading.
     """
+    specification = specification or resolve_specification_or_skip()
     archive_cache_directory = cache_directory.expanduser().resolve()
     archive_path = archive_cache_directory / specification.asset_name
 
@@ -119,7 +134,7 @@ def get_or_download_thermo_helper_archive(
 
 
 def resolve_integration_thermo_helper(
-    specification: ThermoHelperSpecification = THERMO_HELPER_SPECIFICATION,
+    specification: ThermoHelperSpecification | None = None,
     cache_root: Path = TEST_HELPER_CACHE_DIR,
 ) -> Path:
     """Resolve a usable ThermoScanHeaderExtractor executable for integration tests.
@@ -137,15 +152,14 @@ def resolve_integration_thermo_helper(
          failures.
 
     Args:
-        specification: Pinned helper specification. Defaults to
-            `THERMO_HELPER_SPECIFICATION`.
+        specification: Pinned helper specification. If None (default),
+            resolve the host specification, skipping the test on unsupported runtimes.
         cache_root: Root directory for caching the helper across test runs.
 
     Returns:
         The validated Path to a ready Thermo helper executable.
     """
-    if environment.get_platform() != "win32":
-        pytest.skip("ThermoScanHeaderExtractor integration requires Windows.")
+    specification = specification or resolve_specification_or_skip()
 
     real_status = get_thermo_helper_status(specification=specification)
     if real_status.state is ThermoHelperState.READY and real_status.path is not None:

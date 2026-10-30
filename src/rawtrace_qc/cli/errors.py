@@ -42,6 +42,10 @@ def print_cli_error(error: Exception, *, thermo: bool = False) -> None:
             file=sys.stderr,
         )
     elif isinstance(error, UnsupportedPlatformError):
-        print("Thermo .raw extraction requires Windows.", file=sys.stderr)
+        print(
+            "Thermo .raw extraction is not supported on this system; see the "
+            "supported runtimes above.",
+            file=sys.stderr,
+        )
     elif thermo and isinstance(error, ThermoHelperError):
         print("Check setup with `rawtrace-qc thermo status`.", file=sys.stderr)

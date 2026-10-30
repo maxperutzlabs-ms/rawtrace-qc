@@ -18,7 +18,7 @@ def _status(state: ThermoHelperState, path: Path | None = None) -> ThermoHelperS
     return ThermoHelperStatus(
         state=state,
         path=path,
-        version=resolver.THERMO_HELPER_SPECIFICATION.version,
+        version=resolver.WIN_X64_SPECIFICATION.version,
         license_accepted=state is ThermoHelperState.READY,
         message=f"status: {state.value}",
     )
@@ -26,7 +26,7 @@ def _status(state: ThermoHelperState, path: Path | None = None) -> ThermoHelperS
 
 def _archive_specification(payload: bytes) -> resolver.ThermoHelperSpecification:
     return replace(
-        resolver.THERMO_HELPER_SPECIFICATION,
+        resolver.WIN_X64_SPECIFICATION,
         asset_name="test-helper-release.zip",
         sha256=hashlib.sha256(payload).hexdigest(),
     )
@@ -141,6 +141,7 @@ class TestResolveIntegrationThermoHelper:
     @pytest.fixture(autouse=True)
     def force_windows_platform(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(environment, "get_platform", lambda: "win32")
+        monkeypatch.setattr(environment, "get_machine", lambda: "AMD64")
 
     def test_uses_ready_per_user_helper_without_touching_fallback(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -211,7 +212,7 @@ class TestResolveIntegrationThermoHelper:
                 archive_path,
                 {
                     "data_directory": (tmp_path / "cache").resolve(),
-                    "specification": resolver.THERMO_HELPER_SPECIFICATION,
+                    "specification": resolver.WIN_X64_SPECIFICATION,
                     "timeout": 60.0,
                 },
             )

@@ -12,7 +12,9 @@ from zipfile import BadZipFile, ZipFile
 from rawtrace_qc.environment import helper_tool_directory
 from rawtrace_qc.errors import ConfigurationError
 from rawtrace_qc.gui.config import ThermoToolSettings
-from rawtrace_qc.thermo import THERMO_HELPER_SPECIFICATION
+from rawtrace_qc.thermo import THERMO_HELPER_RELEASE
+
+THERMO_HELPER_SPECIFICATION = THERMO_HELPER_RELEASE.specification("win-x64")
 
 
 class ThermoToolManager:

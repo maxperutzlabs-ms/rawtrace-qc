@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 from rawtrace_qc import environment
-from rawtrace_qc.errors import ThermoHelperLicenseError
+from rawtrace_qc.errors import ThermoHelperLicenseError, UnsupportedPlatformError
 from rawtrace_qc.thermo import accept_thermo_license, get_thermo_license_text
 from tests.support.mock_helper import MockThermoHelper, create_mock_helper_file
 
@@ -14,6 +15,7 @@ from tests.support.mock_helper import MockThermoHelper, create_mock_helper_file
 @pytest.fixture(autouse=True)
 def mock_windows_platform(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(environment, "get_platform", lambda: "win32")
+    monkeypatch.setattr(environment, "get_machine", lambda: "AMD64")
 
 
 class TestGetThermoLicenseText:
@@ -106,3 +108,19 @@ class TestAcceptThermoLicense:
             [str(executable.resolve()), "--version"],
             [str(executable.resolve())],
         ]
+
+
+class TestUnsupportedRuntime:
+    @pytest.mark.parametrize("operation", [get_thermo_license_text, accept_thermo_license])
+    def test_license_operations_raise_unsupported_platform_error_without_running_process(
+        self, operation: Callable[[], object], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        mock_runner = MockThermoHelper()
+        monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
+        monkeypatch.setattr(environment, "get_platform", lambda: "linux")
+        monkeypatch.setattr(environment, "get_machine", lambda: "x86_64")
+
+        with pytest.raises(UnsupportedPlatformError, match="'linux-x64'"):
+            operation()
+
+        assert mock_runner.commands_run == []

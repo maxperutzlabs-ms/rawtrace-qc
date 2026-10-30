@@ -5,24 +5,19 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from rawtrace_qc import environment
 from rawtrace_qc.thermo import (
-    THERMO_HELPER_SPECIFICATION,
     ThermoHelperState,
     get_thermo_helper_status,
     install_thermo_helper,
     is_license_accepted,
     verify_helper_version,
 )
-from tests.support.thermo_helper import get_or_download_thermo_helper_archive
+from tests.support.thermo_helper import get_or_download_thermo_helper_archive, resolve_specification_or_skip
 
 
 @pytest.mark.network
 def test_downloads_installs_and_reports_version_and_license_state(tmp_path: Path) -> None:
-    if environment.get_platform() != "win32":
-        pytest.skip("ThermoScanHeaderExtractor integration requires Windows.")
-
-    specification = THERMO_HELPER_SPECIFICATION
+    specification = resolve_specification_or_skip()
     data_directory = tmp_path / "app-data"
     initial_status = get_thermo_helper_status(data_directory=data_directory, specification=specification)
     assert initial_status.state is ThermoHelperState.NOT_INSTALLED

@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from rawtrace_qc.thermo.specification import THERMO_HELPER_SPECIFICATION
+from rawtrace_qc.thermo.specification import THERMO_HELPER_RELEASE, resolve_thermo_helper_specification
 
 
 @dataclass
@@ -23,7 +23,7 @@ class MockThermoHelper:
     disk, so tests never touch the real user's license state.
     """
 
-    version: str = THERMO_HELPER_SPECIFICATION.version
+    version: str = THERMO_HELPER_RELEASE.version
     exit_code: int = 0
     stdout: str | None = None
     stderr: str = ""
@@ -92,16 +92,19 @@ class MockThermoHelper:
         )
 
 
-def create_mock_helper_file(directory: Path, name: str = THERMO_HELPER_SPECIFICATION.executable_name) -> Path:
+def create_mock_helper_file(directory: Path, name: str | None = None) -> Path:
     """Create a mock helper binary file in a directory.
 
     Args:
         directory: Destination folder.
-        name: Executable filename. Defaults to the pinned helper executable name.
+        name: Executable filename. If None (default), use the executable name of the
+            host-resolved helper specification.
 
     Returns:
         The created executable path.
     """
+    if name is None:
+        name = resolve_thermo_helper_specification().executable_name
     directory.mkdir(parents=True, exist_ok=True)
     executable_path = directory / name
     executable_path.write_bytes(b"MZmock_executable_standin")
@@ -124,7 +127,7 @@ if __name__ == "__main__":
             time.sleep(30)
         sys.exit(0)
     elif "--version" in sys.argv:
-        sys.stdout.write(f"{THERMO_HELPER_SPECIFICATION.version}\n")
+        sys.stdout.write(f"{THERMO_HELPER_RELEASE.version}\n")
         sys.exit(0)
     elif "--thermo-license" in sys.argv:
         sys.stdout.write("Mock Thermo license terms.\n")

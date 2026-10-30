@@ -9,7 +9,6 @@ from cyclopts import App
 from rawtrace_qc.cli.errors import print_cli_error
 from rawtrace_qc.errors import ThermoHelperError
 from rawtrace_qc.thermo import (
-    THERMO_HELPER_SPECIFICATION,
     ThermoHelperState,
     accept_thermo_license,
     get_thermo_helper_status,
@@ -64,7 +63,6 @@ def install(
         executable = install_thermo_helper(
             archive_path=from_zip,
             data_directory=data_directory,
-            specification=THERMO_HELPER_SPECIFICATION,
         )
     except ThermoHelperError as error:
         print_cli_error(error, thermo=True)
@@ -126,7 +124,8 @@ def _status_action(state: ThermoHelperState) -> str:
             "Install the pinned helper version with `rawtrace-qc thermo install`."
         ),
         ThermoHelperState.UNSUPPORTED_PLATFORM: (
-            "Thermo .raw extraction and helper setup require Windows."
+            "Thermo .raw extraction and helper setup are not supported on this "
+            "system; see the supported runtimes above."
         ),
         ThermoHelperState.READY: "",
     }

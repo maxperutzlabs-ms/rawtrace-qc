@@ -21,7 +21,6 @@ from rawtrace_qc.errors import (
     UnsupportedPlatformError,
 )
 from rawtrace_qc.thermo import (
-    THERMO_HELPER_SPECIFICATION,
     download_thermo_helper_archive,
     extract_thermo_helper_archive,
     install_thermo_helper,
@@ -29,11 +28,13 @@ from rawtrace_qc.thermo import (
 )
 from rawtrace_qc.thermo import installation as installation_module
 from rawtrace_qc.thermo.specification import ThermoHelperSpecification
+from tests.support.thermo_helper import WIN_X64_SPECIFICATION
 
 
 @pytest.fixture(autouse=True)
 def mock_windows_platform(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(environment, "get_platform", lambda: "win32")
+    monkeypatch.setattr(environment, "get_machine", lambda: "AMD64")
 
 
 def _create_archive(
@@ -41,14 +42,14 @@ def _create_archive(
 ) -> tuple[Path, ThermoHelperSpecification]:
     archive_path = directory / filename
     archive_members = members or {
-        THERMO_HELPER_SPECIFICATION.executable_name: b"MZmock-helper",
+        WIN_X64_SPECIFICATION.executable_name: b"MZmock-helper",
         "ThermoScanHeaderExtractor.dll": b"mock-dependency",
     }
     with ZipFile(archive_path, "w", compression=ZIP_DEFLATED) as archive:
         for name, content in archive_members.items():
             archive.writestr(name, content)
     digest = hashlib.sha256(archive_path.read_bytes()).hexdigest()
-    return archive_path, replace(THERMO_HELPER_SPECIFICATION, sha256=digest)
+    return archive_path, replace(WIN_X64_SPECIFICATION, sha256=digest)
 
 
 def _managed_directory(data_directory: Path, specification: ThermoHelperSpecification) -> Path:
@@ -62,10 +63,11 @@ def _assert_no_staging_directories(data_directory: Path, specification: ThermoHe
 
 
 class TestInstallThermoHelper:
-    def test_rejects_non_windows_platform(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_rejects_unsupported_runtime(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(environment, "get_platform", lambda: "linux")
+        monkeypatch.setattr(environment, "get_machine", lambda: "AMD64")
 
-        with pytest.raises(UnsupportedPlatformError, match="requires Windows"):
+        with pytest.raises(UnsupportedPlatformError, match=r"'linux-x64'.*\['win-x64'\]"):
             install_thermo_helper()
 
     def test_installs_local_archive_atomically_without_accepting_license(self, tmp_path: Path) -> None:
@@ -120,7 +122,7 @@ class TestInstallThermoHelper:
         archive_path = tmp_path / "corrupt.zip"
         archive_path.write_bytes(b"not a zip archive")
         digest = hashlib.sha256(archive_path.read_bytes()).hexdigest()
-        specification = replace(THERMO_HELPER_SPECIFICATION, sha256=digest)
+        specification = replace(WIN_X64_SPECIFICATION, sha256=digest)
         data_directory = tmp_path / "appdata"
 
         with pytest.raises(ThermoHelperArchiveError, match="Could not safely extract"):
@@ -137,7 +139,7 @@ class TestInstallThermoHelper:
         archive_path, specification = _create_archive(
             tmp_path,
             {
-                THERMO_HELPER_SPECIFICATION.executable_name: b"MZmock-helper",
+                WIN_X64_SPECIFICATION.executable_name: b"MZmock-helper",
                 "../../escape.txt": b"outside",
             },
             filename="traversal.zip",
@@ -208,7 +210,7 @@ class TestInstallThermoHelper:
         )
         second_archive, second_specification = _create_archive(
             tmp_path,
-            {THERMO_HELPER_SPECIFICATION.executable_name: b"MZdifferent-helper"},
+            {WIN_X64_SPECIFICATION.executable_name: b"MZdifferent-helper"},
             filename="second.zip",
         )
         assert second_specification.version == first_specification.version
@@ -227,7 +229,7 @@ class TestInstallThermoHelper:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        specification = THERMO_HELPER_SPECIFICATION
+        specification = WIN_X64_SPECIFICATION
         data_directory = tmp_path / "appdata"
 
         def fail_download(

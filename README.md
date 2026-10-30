@@ -2,7 +2,7 @@
 
 `rawtrace-qc` is a Python library for extracting mass-spectrometry scan traces and generating interactive HTML QC reports from vendor raw-file formats.
 
-The library supports Bruker timsTOF `.d` directories with a native Python extractor and Thermo `.raw` files through the separate Windows-only `ThermoScanHeaderExtractor` helper. The helper is not bundled; its setup and license acceptance are explicit commands.
+The library supports Bruker timsTOF `.d` directories with a native Python extractor and Thermo `.raw` files through the separate `ThermoScanHeaderExtractor` helper (currently supported runtimes: `win-x64`; Windows on Arm runs it under x64 emulation). The helper is not bundled; its setup and license acceptance are explicit commands.
 
 The project is being developed library-first. File discovery, extraction, validated Parquet artifacts, trace processing, report generation, and the optional GUI are implemented as clients of the same service layers.
 

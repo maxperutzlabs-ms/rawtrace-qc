@@ -81,7 +81,7 @@ class TestCliErrors:
 
         captured = capsys.readouterr()
         assert "Error: Non-Windows." in captured.err
-        assert "Thermo .raw extraction requires Windows." in captured.err
+        assert "Thermo .raw extraction is not supported on this system" in captured.err
 
     def test_print_cli_error_thermo_fallback_hint(self, capsys: pytest.CaptureFixture[str]) -> None:
         error = ThermoHelperChecksumError("Bad checksum.")

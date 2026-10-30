@@ -11,10 +11,7 @@ from rawtrace_qc.extractors.protocol import PrecisionMode
 from rawtrace_qc.models import ExtractionResult
 from rawtrace_qc.thermo.locator import locate_thermo_helper
 from rawtrace_qc.thermo.runner import build_thermo_helper_command, run_thermo_helper
-from rawtrace_qc.thermo.specification import (
-    THERMO_HELPER_SPECIFICATION,
-    ThermoHelperSpecification,
-)
+from rawtrace_qc.thermo.specification import ThermoHelperSpecification
 from rawtrace_qc.traces import load_trace
 
 
@@ -26,7 +23,8 @@ class ThermoExtractor:
     license has been accepted, executes extraction to a temporary staging
     location, validates the resulting schema-v1 Parquet trace files, and moves
     them to the requested destination directory. Any failure cleans up partial
-    outputs and raises an informative error.
+    outputs and raises an informative error. Currently supported runtimes:
+    `win-x64` (Windows on Arm runs it under x64 emulation).
     """
 
     def __init__(
@@ -34,7 +32,7 @@ class ThermoExtractor:
         helper_path: Path | str | None = None,
         *,
         data_directory: Path | str | None = None,
-        specification: ThermoHelperSpecification = THERMO_HELPER_SPECIFICATION,
+        specification: ThermoHelperSpecification | None = None,
         timeout: float = 600.0,
     ) -> None:
         """Initialize a ThermoExtractor instance.
@@ -44,8 +42,9 @@ class ThermoExtractor:
                 executable or directory. Defaults to None.
             data_directory: Application data directory override for locating the
                 managed helper. Defaults to None.
-            specification: Pinned helper release metadata. Defaults to
-                `THERMO_HELPER_SPECIFICATION`.
+            specification: Pinned helper release metadata. If None (default),
+                resolve the specification for the current host runtime when
+                extracting.
             timeout: Process execution timeout in seconds. Defaults to 600.0.
         """
         self._helper_path = Path(helper_path) if helper_path is not None else None
@@ -87,7 +86,8 @@ class ThermoExtractor:
         Raises:
             ValueError: If an option, filename, or input path format is invalid.
             ValueError: If an argument or input file path is invalid.
-            UnsupportedPlatformError: If the operating system is not Windows.
+            UnsupportedPlatformError: If the current runtime has no pinned helper
+                release.
             ThermoHelperNotFoundError: If the helper executable cannot be located.
             ThermoHelperVersionError: If the helper version does not match.
             ThermoHelperLicenseError: If the helper license is not accepted.

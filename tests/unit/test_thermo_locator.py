@@ -15,7 +15,6 @@ from rawtrace_qc.errors import (
     UnsupportedPlatformError,
 )
 from rawtrace_qc.thermo import (
-    THERMO_HELPER_SPECIFICATION,
     ThermoHelperState,
     find_thermo_helper_path,
     get_thermo_helper_status,
@@ -25,11 +24,13 @@ from rawtrace_qc.thermo import (
     verify_helper_version,
 )
 from tests.support.mock_helper import MockThermoHelper, create_mock_helper_file
+from tests.support.thermo_helper import WIN_X64_SPECIFICATION
 
 
 @pytest.fixture(autouse=True)
 def mock_windows_platform(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(environment, "get_platform", lambda: "win32")
+    monkeypatch.setattr(environment, "get_machine", lambda: "AMD64")
 
 
 class TestFindThermoHelperPath:
@@ -51,8 +52,8 @@ class TestFindThermoHelperPath:
     def test_finds_managed_install_in_data_directory(self, tmp_path: Path) -> None:
         data_dir = tmp_path / "appdata"
         managed_dir = helper_tool_directory(
-            THERMO_HELPER_SPECIFICATION.tool_name,
-            THERMO_HELPER_SPECIFICATION.version,
+            WIN_X64_SPECIFICATION.tool_name,
+            WIN_X64_SPECIFICATION.version,
             data_directory=data_dir,
         )
         managed_exe = create_mock_helper_file(managed_dir)
@@ -64,8 +65,8 @@ class TestFindThermoHelperPath:
     def test_explicit_path_takes_priority_over_managed_install(self, tmp_path: Path) -> None:
         data_dir = tmp_path / "appdata"
         managed_dir = helper_tool_directory(
-            THERMO_HELPER_SPECIFICATION.tool_name,
-            THERMO_HELPER_SPECIFICATION.version,
+            WIN_X64_SPECIFICATION.tool_name,
+            WIN_X64_SPECIFICATION.version,
             data_directory=data_dir,
         )
         create_mock_helper_file(managed_dir)
@@ -78,8 +79,8 @@ class TestFindThermoHelperPath:
     def test_falls_back_to_managed_install_when_explicit_path_does_not_exist(self, tmp_path: Path) -> None:
         data_dir = tmp_path / "appdata"
         managed_dir = helper_tool_directory(
-            THERMO_HELPER_SPECIFICATION.tool_name,
-            THERMO_HELPER_SPECIFICATION.version,
+            WIN_X64_SPECIFICATION.tool_name,
+            WIN_X64_SPECIFICATION.version,
             data_directory=data_dir,
         )
         managed_exe = create_mock_helper_file(managed_dir)
@@ -99,12 +100,13 @@ class TestFindThermoHelperPath:
 
 
 class TestGetThermoHelperStatus:
-    def test_returns_unsupported_platform_state_on_non_windows_without_running_process(
+    def test_returns_unsupported_platform_state_for_unsupported_runtime_without_running_process(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         mock_runner = MockThermoHelper()
         monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
         monkeypatch.setattr(environment, "get_platform", lambda: "linux")
+        monkeypatch.setattr(environment, "get_machine", lambda: "AMD64")
 
         status = get_thermo_helper_status()
 
@@ -113,8 +115,25 @@ class TestGetThermoHelperStatus:
         assert status.version is None
         assert not status.license_accepted
         assert not status.is_ready
-        assert "requires Windows" in status.message
+        assert "'linux-x64'" in status.message
+        assert "['win-x64']" in status.message
         assert len(mock_runner.commands_run) == 0
+
+    def test_windows_arm64_host_resolves_the_win_x64_helper(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(environment, "get_machine", lambda: "ARM64")
+        mock_runner = MockThermoHelper(license_accepted=True)
+        monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
+        managed_dir = helper_tool_directory(
+            WIN_X64_SPECIFICATION.tool_name, WIN_X64_SPECIFICATION.version, data_directory=tmp_path
+        )
+        executable = create_mock_helper_file(managed_dir)
+
+        status = get_thermo_helper_status(data_directory=tmp_path)
+
+        assert status.state is ThermoHelperState.READY
+        assert status.path == executable.resolve()
 
     def test_returns_not_installed_state_when_executable_missing_without_running_process(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -136,14 +155,14 @@ class TestGetThermoHelperStatus:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         exe = create_mock_helper_file(tmp_path)
-        mock_runner = MockThermoHelper(version=THERMO_HELPER_SPECIFICATION.version)
+        mock_runner = MockThermoHelper(version=WIN_X64_SPECIFICATION.version)
         monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
 
         status = get_thermo_helper_status(exe)
 
         assert status.state is ThermoHelperState.UNLICENSED
         assert status.path == exe.resolve()
-        assert status.version == THERMO_HELPER_SPECIFICATION.version
+        assert status.version == WIN_X64_SPECIFICATION.version
         assert not status.license_accepted
         assert not status.is_ready
         assert "--agree-to-terms" in status.message
@@ -152,14 +171,14 @@ class TestGetThermoHelperStatus:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         exe = create_mock_helper_file(tmp_path)
-        mock_runner = MockThermoHelper(version=THERMO_HELPER_SPECIFICATION.version, license_accepted=True)
+        mock_runner = MockThermoHelper(version=WIN_X64_SPECIFICATION.version, license_accepted=True)
         monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
 
         status = get_thermo_helper_status(exe)
 
         assert status.state is ThermoHelperState.READY
         assert status.path == exe.resolve()
-        assert status.version == THERMO_HELPER_SPECIFICATION.version
+        assert status.version == WIN_X64_SPECIFICATION.version
         assert status.license_accepted
         assert status.is_ready
         assert "is ready" in status.message
@@ -185,7 +204,7 @@ class TestGetThermoHelperStatus:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         exe = create_mock_helper_file(tmp_path)
-        mock_runner = MockThermoHelper(version=THERMO_HELPER_SPECIFICATION.version)
+        mock_runner = MockThermoHelper(version=WIN_X64_SPECIFICATION.version)
 
         def run(args: list[str | Path], *, timeout: float = 10.0) -> subprocess.CompletedProcess[str]:
             if len(args) == 1:
@@ -263,9 +282,10 @@ class TestGetThermoHelperStatus:
 
 
 class TestLocateThermoHelper:
-    def test_raises_unsupported_platform_error_on_non_windows(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_raises_unsupported_platform_error_for_unsupported_runtime(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(environment, "get_platform", lambda: "darwin")
-        with pytest.raises(UnsupportedPlatformError, match="requires Windows"):
+        monkeypatch.setattr(environment, "get_machine", lambda: "AMD64")
+        with pytest.raises(UnsupportedPlatformError, match="'osx-x64'"):
             locate_thermo_helper()
 
     def test_raises_thermo_helper_not_found_error_when_executable_missing(self, tmp_path: Path) -> None:
@@ -276,7 +296,7 @@ class TestLocateThermoHelper:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         exe = create_mock_helper_file(tmp_path)
-        mock_runner = MockThermoHelper(version=THERMO_HELPER_SPECIFICATION.version)
+        mock_runner = MockThermoHelper(version=WIN_X64_SPECIFICATION.version)
         monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
 
         with pytest.raises(ThermoHelperLicenseError, match="license agreement has not been accepted"):
@@ -304,7 +324,7 @@ class TestLocateThermoHelper:
 
     def test_returns_executable_path_when_ready(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         exe = create_mock_helper_file(tmp_path)
-        mock_runner = MockThermoHelper(version=THERMO_HELPER_SPECIFICATION.version, license_accepted=True)
+        mock_runner = MockThermoHelper(version=WIN_X64_SPECIFICATION.version, license_accepted=True)
         monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
 
         result = locate_thermo_helper(exe)
@@ -316,13 +336,13 @@ class TestLocateThermoHelper:
     ) -> None:
         data_dir = tmp_path / "appdata"
         managed_dir = helper_tool_directory(
-            THERMO_HELPER_SPECIFICATION.tool_name,
-            THERMO_HELPER_SPECIFICATION.version,
+            WIN_X64_SPECIFICATION.tool_name,
+            WIN_X64_SPECIFICATION.version,
             data_directory=data_dir,
         )
         create_mock_helper_file(managed_dir)
         explicit_exe = create_mock_helper_file(tmp_path / "custom")
-        mock_runner = MockThermoHelper(version=THERMO_HELPER_SPECIFICATION.version, license_accepted=True)
+        mock_runner = MockThermoHelper(version=WIN_X64_SPECIFICATION.version, license_accepted=True)
         monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
 
         result = locate_thermo_helper(explicit_exe, data_directory=data_dir)

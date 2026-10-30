@@ -58,6 +58,7 @@ class TestThermoExtractorUnit:
     @pytest.fixture(autouse=True)
     def force_windows_platform(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(environment, "get_platform", lambda: "win32")
+        monkeypatch.setattr(environment, "get_machine", lambda: "AMD64")
 
     def test_missing_helper_raises_not_found_error_without_running(
         self,
@@ -351,6 +352,7 @@ class TestThermoExtractorUnit:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr(environment, "get_platform", lambda: "linux")
+        monkeypatch.setattr(environment, "get_machine", lambda: "AMD64")
         raw_file = tmp_path / "sample.raw"
         raw_file.touch()
 

@@ -16,8 +16,9 @@ from rawtrace_qc.errors import (
     UnsupportedPlatformError,
 )
 from rawtrace_qc.thermo.specification import (
-    THERMO_HELPER_SPECIFICATION,
+    THERMO_HELPER_RELEASE,
     ThermoHelperSpecification,
+    resolve_thermo_helper_specification,
 )
 
 # Exit code the helper returns when the current user has not accepted the
@@ -47,7 +48,7 @@ class ThermoHelperStatus:
     version: str | None
     license_accepted: bool
     message: str
-    expected_version: str = THERMO_HELPER_SPECIFICATION.version
+    expected_version: str = THERMO_HELPER_RELEASE.version
 
     @property
     def is_ready(self) -> bool:
@@ -59,11 +60,11 @@ def locate_thermo_helper(
     explicit_path: Path | str | None = None,
     *,
     data_directory: Path | str | None = None,
-    specification: ThermoHelperSpecification = THERMO_HELPER_SPECIFICATION,
+    specification: ThermoHelperSpecification | None = None,
 ) -> Path:
     """Locate and return a usable ThermoScanHeaderExtractor executable.
 
-    Checks that the current platform is Windows, resolves the executable path
+    Checks that the current runtime is supported, resolves the executable path
     by priority, verifies that the helper is installed, checks that its version
     matches the pinned specification, and verifies that the license agreement
     has been accepted.
@@ -73,13 +74,14 @@ def locate_thermo_helper(
             to None.
         data_directory: Data directory root. If None (default), uses the
             platform default user data directory.
-        specification: Release specification. Defaults to
-            `THERMO_HELPER_SPECIFICATION`.
+        specification: Release specification. If None (default), resolve the
+            specification for the current host runtime.
     Returns:
         The validated Path to the usable ThermoScanHeaderExtractor executable.
 
     Raises:
-        UnsupportedPlatformError: If the platform is not Windows (`"win32"`).
+        UnsupportedPlatformError: If the current runtime has no pinned helper
+            release.
         ThermoHelperNotFoundError: If no helper executable is found.
         ThermoHelperVersionError: If the helper version is wrong or unreadable.
         ThermoHelperLicenseError: If the Thermo license agreement has not been
@@ -118,7 +120,7 @@ def get_thermo_helper_status(
     explicit_path: Path | str | None = None,
     *,
     data_directory: Path | str | None = None,
-    specification: ThermoHelperSpecification = THERMO_HELPER_SPECIFICATION,
+    specification: ThermoHelperSpecification | None = None,
 ) -> ThermoHelperStatus:
     """Inspect the status of ThermoScanHeaderExtractor without side effects.
 
@@ -130,25 +132,23 @@ def get_thermo_helper_status(
             to None.
         data_directory: Data directory root. If None (default), uses the
             platform default user data directory.
-        specification: Release specification. Defaults to
-            `THERMO_HELPER_SPECIFICATION`.
+        specification: Release specification. If None (default), resolve the
+            specification for the current host runtime.
     Returns:
         A `ThermoHelperStatus` instance describing the helper state.
     """
-    current_platform = environment.get_platform()
-    if current_platform != "win32":
-        return ThermoHelperStatus(
-            state=ThermoHelperState.UNSUPPORTED_PLATFORM,
-            path=None,
-            version=None,
-            license_accepted=False,
-            message=(
-                f"ThermoScanHeaderExtractor requires Windows, but current platform is "
-                f"{current_platform!r}. Thermo .raw extraction is only "
-                "supported on Windows."
-            ),
-            expected_version=specification.version,
-        )
+    if specification is None:
+        try:
+            specification = resolve_thermo_helper_specification()
+        except UnsupportedPlatformError as error:
+            return ThermoHelperStatus(
+                state=ThermoHelperState.UNSUPPORTED_PLATFORM,
+                path=None,
+                version=None,
+                license_accepted=False,
+                message=str(error),
+                expected_version=THERMO_HELPER_RELEASE.version,
+            )
 
     candidate = find_thermo_helper_path(
         explicit_path,
@@ -262,7 +262,7 @@ def find_thermo_helper_path(
     explicit_path: Path | str | None = None,
     *,
     data_directory: Path | str | None = None,
-    specification: ThermoHelperSpecification = THERMO_HELPER_SPECIFICATION,
+    specification: ThermoHelperSpecification | None = None,
 ) -> Path | None:
     """Resolve the candidate ThermoScanHeaderExtractor path by priority.
 
@@ -277,13 +277,20 @@ def find_thermo_helper_path(
             to None.
         data_directory: Data directory root. If None (default), uses the
             platform default user data directory.
-        specification: Release specification. Defaults to
-            `THERMO_HELPER_SPECIFICATION`.
+        specification: Release specification. If None (default), resolve the
+            specification for the current host runtime.
 
     Returns:
         The resolved executable path if a file exists, or None if neither
         location exists.
+
+    Raises:
+        UnsupportedPlatformError: If no specification is given and the current
+            runtime has no pinned helper release.
     """
+    if specification is None:
+        specification = resolve_thermo_helper_specification()
+
     if explicit_path is not None:
         explicit = Path(explicit_path).expanduser().resolve()
         if explicit.is_file():
@@ -309,7 +316,7 @@ def find_thermo_helper_path(
 
 def verify_helper_version(
     executable_path: Path,
-    expected_version: str = THERMO_HELPER_SPECIFICATION.version,
+    expected_version: str = THERMO_HELPER_RELEASE.version,
     *,
     timeout: float = 10.0,
 ) -> str:
@@ -318,7 +325,7 @@ def verify_helper_version(
     Args:
         executable_path: Path to the ThermoScanHeaderExtractor executable.
         expected_version: Expected release version. Defaults to the pinned
-            version in `THERMO_HELPER_SPECIFICATION`.
+            version in `THERMO_HELPER_RELEASE`.
         timeout: Maximum time to wait in seconds. Defaults to 10.0.
 
     Returns:

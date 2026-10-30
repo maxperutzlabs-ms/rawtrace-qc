@@ -8,15 +8,15 @@ from rawtrace_qc.cli import main
 from rawtrace_qc.cli import thermo as thermo_cli_module
 from rawtrace_qc.environment import helper_tool_directory
 from rawtrace_qc.errors import ThermoHelperChecksumError, ThermoHelperDownloadError
-from rawtrace_qc.thermo import THERMO_HELPER_SPECIFICATION
 from rawtrace_qc.thermo import locator as locator_module
 from tests.support.mock_helper import MockThermoHelper, create_mock_helper_file
+from tests.support.thermo_helper import WIN_X64_SPECIFICATION
 
 
 def _create_helper(data_directory: Path) -> Path:
     helper_directory = helper_tool_directory(
-        THERMO_HELPER_SPECIFICATION.tool_name,
-        THERMO_HELPER_SPECIFICATION.version,
+        WIN_X64_SPECIFICATION.tool_name,
+        WIN_X64_SPECIFICATION.version,
         data_directory=data_directory,
     )
     return create_mock_helper_file(helper_directory)
@@ -27,10 +27,10 @@ class TestThermoStatusCommand:
         ("state", "version", "licensed", "platform", "exit_code", "action"),
         [
             ("not_installed", None, False, "win32", 1, "thermo install"),
-            ("unlicensed", THERMO_HELPER_SPECIFICATION.version, False, "win32", 1, "thermo accept-license"),
+            ("unlicensed", WIN_X64_SPECIFICATION.version, False, "win32", 1, "thermo accept-license"),
             ("invalid_version", "9.9.9", True, "win32", 1, "pinned helper version"),
-            ("unsupported_platform", None, False, "linux", 1, "requires Windows"),
-            ("ready", THERMO_HELPER_SPECIFICATION.version, True, "win32", 0, "is ready"),
+            ("unsupported_platform", None, False, "linux", 1, "not supported on this system"),
+            ("ready", WIN_X64_SPECIFICATION.version, True, "win32", 0, "is ready"),
         ],
     )
     def test_status_reports_each_helper_state(
@@ -49,10 +49,9 @@ class TestThermoStatusCommand:
         helper = None
         if version is not None:
             helper = _create_helper(data_directory)
-        mock_helper = MockThermoHelper(
-            version=version or THERMO_HELPER_SPECIFICATION.version, license_accepted=licensed
-        )
+        mock_helper = MockThermoHelper(version=version or WIN_X64_SPECIFICATION.version, license_accepted=licensed)
         monkeypatch.setattr(environment, "get_platform", lambda: platform)
+        monkeypatch.setattr(environment, "get_machine", lambda: "AMD64")
         monkeypatch.setattr(locator_module, "execute_helper_process", mock_helper)
 
         result = main(["thermo", "status", "--data-directory", str(data_directory)])
@@ -102,7 +101,6 @@ class TestThermoSetupCommands:
         assert result == 0
         assert calls["archive_path"] == archive_path
         assert calls["data_directory"] == data_directory
-        assert calls["specification"] is THERMO_HELPER_SPECIFICATION
         assert str(executable) in output
         assert "thermo accept-license" in output
 
@@ -151,6 +149,7 @@ class TestThermoSetupCommands:
         _create_helper(data_directory)
         mock_helper = MockThermoHelper()
         monkeypatch.setattr(environment, "get_platform", lambda: "win32")
+        monkeypatch.setattr(environment, "get_machine", lambda: "AMD64")
         monkeypatch.setattr(locator_module, "execute_helper_process", mock_helper)
 
         result = main(["thermo", "accept-license", "--data-directory", str(data_directory)])
@@ -178,6 +177,7 @@ class TestThermoSetupCommands:
         _create_helper(data_directory)
         mock_helper = MockThermoHelper(records_acceptance=False)
         monkeypatch.setattr(environment, "get_platform", lambda: "win32")
+        monkeypatch.setattr(environment, "get_machine", lambda: "AMD64")
         monkeypatch.setattr(locator_module, "execute_helper_process", mock_helper)
 
         result = main(["thermo", "accept-license", "--data-directory", str(data_directory)])

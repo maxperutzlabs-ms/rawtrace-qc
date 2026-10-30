@@ -13,13 +13,15 @@ from rawtrace_qc import environment
 from rawtrace_qc.errors import UnsupportedPlatformError
 from rawtrace_qc.thermo import (
     THERMO_HELPER_RELEASE,
-    THERMO_HELPER_SPECIFICATION,
     ThermoHelperRelease,
     resolve_thermo_helper_specification,
     verify_thermo_helper_archive,
 )
 from tests.support.network import urlopen_or_skip
-from tests.support.thermo_helper import get_or_download_thermo_helper_archive
+from tests.support.thermo_helper import (
+    WIN_X64_SPECIFICATION,
+    get_or_download_thermo_helper_archive,
+)
 
 
 def _is_github_rate_limit(error: HTTPError) -> bool:
@@ -108,7 +110,7 @@ class TestResolveThermoHelperSpecification:
 
 class TestThermoHelperSpecification:
     def test_pinned_release_metadata_is_internally_consistent(self) -> None:
-        specification = THERMO_HELPER_SPECIFICATION
+        specification = WIN_X64_SPECIFICATION
 
         assert len(specification.sha256) == 64
         int(specification.sha256, 16)
@@ -118,12 +120,12 @@ class TestThermoHelperSpecification:
 
     @pytest.mark.network
     def test_published_archive_is_available(self) -> None:
-        with urlopen_or_skip(THERMO_HELPER_SPECIFICATION.download_url, timeout=10.0, method="HEAD") as response:
+        with urlopen_or_skip(WIN_X64_SPECIFICATION.download_url, timeout=10.0, method="HEAD") as response:
             assert response.status == 200
 
     @pytest.mark.network
     def test_published_archive_sha256_matches_pinned_checksum(self) -> None:
-        specification = THERMO_HELPER_SPECIFICATION
+        specification = WIN_X64_SPECIFICATION
         release_url = (
             "https://api.github.com/repos/maxperutzlabs-ms/"
             f"thermo-scan-header-extractor/releases/tags/v{specification.version}"
@@ -159,6 +161,6 @@ class TestThermoHelperSpecification:
         archive_path = get_or_download_thermo_helper_archive()
 
         assert (
-            verify_thermo_helper_archive(archive_path, specification=THERMO_HELPER_SPECIFICATION)
-            == THERMO_HELPER_SPECIFICATION.sha256
+            verify_thermo_helper_archive(archive_path, specification=WIN_X64_SPECIFICATION)
+            == WIN_X64_SPECIFICATION.sha256
         )

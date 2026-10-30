@@ -12,7 +12,11 @@ from typing import Any
 
 from rawtrace_qc.discovery import DiscoveryScope
 from rawtrace_qc.environment import default_data_directory
-from rawtrace_qc.errors import ConfigurationError, DiscoveryError
+from rawtrace_qc.errors import (
+    ConfigurationError,
+    DiscoveryError,
+    UnsupportedPlatformError,
+)
 from rawtrace_qc.gui.cache import TraceCache
 from rawtrace_qc.gui.config import (
     GuiSettings,
@@ -33,7 +37,11 @@ from rawtrace_qc.gui.theme import (
     resolve_theme,
 )
 from rawtrace_qc.gui.workflow import RawFileSelection
-from rawtrace_qc.thermo import THERMO_HELPER_SPECIFICATION
+from rawtrace_qc.thermo import (
+    THERMO_HELPER_RELEASE,
+    detect_runtime,
+    resolve_thermo_helper_specification,
+)
 
 
 def main() -> int:
@@ -1458,11 +1466,12 @@ def create_window(
             pinned_layout = qt_widgets.QHBoxLayout(pinned_version)
             pinned_layout.setContentsMargins(0, 0, 0, 0)
             pinned_layout.setSpacing(8)
-            version_pill = qt_widgets.QLabel(f"v{THERMO_HELPER_SPECIFICATION.version}")
+            version_pill = qt_widgets.QLabel(f"v{THERMO_HELPER_RELEASE.version}")
             version_pill.setObjectName("pinnedVersion")
-            asset_name = ElidedLabel(THERMO_HELPER_SPECIFICATION.asset_name)
+            asset_label = _thermo_asset_label()
+            asset_name = ElidedLabel(asset_label)
             asset_name.setObjectName("settingsAssetName")
-            asset_name.setToolTip(THERMO_HELPER_SPECIFICATION.asset_name)
+            asset_name.setToolTip(asset_label)
             pinned_layout.addWidget(version_pill)
             pinned_layout.addWidget(asset_name, 1)
             add_setting_row(thermo_form, "Pinned version", pinned_version)
@@ -1723,6 +1732,16 @@ def _dialog_start_directory(path_text: str) -> str:
                 selected_path if selected_path.is_dir() else selected_path.parent
             )
     return str(default_data_directory())
+
+
+def _thermo_asset_label() -> str:
+    try:
+        return resolve_thermo_helper_specification().asset_name
+    except UnsupportedPlatformError:
+        try:
+            return f"Not supported on {detect_runtime()}"
+        except UnsupportedPlatformError:
+            return "Not supported on this system"
 
 
 def _thermo_settings(executable: str) -> Any:

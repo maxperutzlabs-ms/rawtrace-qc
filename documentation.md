@@ -157,13 +157,13 @@ if result.msn_path is not None:
 ## Thermo Helper Integration (ThermoScanHeaderExtractor)
 
 
-Thermo `.raw` scan-header extraction relies on an external Windows command-line utility named `ThermoScanHeaderExtractor`. The library manages specification pinning, helper location, status inspection, and license verification.
+Thermo `.raw` scan-header extraction relies on an external command-line utility named `ThermoScanHeaderExtractor`. Currently supported runtimes: `win-x64` (Windows on Arm runs it under x64 emulation). The library manages specification pinning, helper location, status inspection, and license verification.
 
 The helper remains separate because it uses Thermo's Windows-specific RAW access stack and its own license agreement. It is not bundled in the Python package or wheel. Installing the Python CLI does not install the helper, and extracting or reporting a `.raw` file never installs the helper or accepts its license automatically.
 
 ### Pinned Release Specification
 
-The expected helper release is pinned in `rawtrace_qc.thermo.THERMO_HELPER_SPECIFICATION`. This specification defines the exact expected release version (`0.2.0`), asset archive name, official download URL, SHA-256 checksum digest, and executable name (`ThermoScanHeaderExtractor.exe`).
+The expected helper release is pinned in `rawtrace_qc.thermo.THERMO_HELPER_RELEASE`. It defines the exact release version (`0.2.0`) and, per runtime, the asset archive name, archive format, SHA-256 checksum digest, and executable name (`ThermoScanHeaderExtractor.exe` for `win-x64`); the official download URL is derived from the version and asset name. `resolve_thermo_helper_specification()` detects the host runtime (for example `win-x64`) and returns the matching `ThermoHelperSpecification`. A runtime without a pinned asset raises `UnsupportedPlatformError`, except that `win-arm64` falls back to the `win-x64` asset, which Windows on Arm runs under x64 emulation.
 
 ### Install the Helper
 
@@ -198,7 +198,7 @@ The helper is the sole authority on its license state; rawtrace-qc does not insp
 The status distinguishes at least:
 
 - `ThermoHelperState.NOT_INSTALLED`: No helper executable was found at the prioritized locations. No subprocess is executed.
-- `ThermoHelperState.UNSUPPORTED_PLATFORM`: The current platform is not Windows.
+- `ThermoHelperState.UNSUPPORTED_PLATFORM`: The current runtime has no pinned helper release. The message names the runtime and lists the supported runtimes.
 - `ThermoHelperState.UNLICENSED`: The helper is installed and its version matches, but it reports that the Thermo license has not been accepted, or its license state could not be determined.
 - `ThermoHelperState.INVALID_VERSION`: The helper is installed but returned an unreadable version, crashed, timed out, or reported a version that does not match the pinned specification.
 - `ThermoHelperState.READY`: The helper is installed, matches the expected version, and reports the Thermo license as accepted.
@@ -276,7 +276,7 @@ The helper's release version, asset, and checksum are pinned by the installed `r
 
 `locate_thermo_helper()` returns the validated `Path` to a ready helper executable. If the helper is not ready or the platform is unsupported, it raises a specific, actionable exception:
 
-- `UnsupportedPlatformError`: Raised on non-Windows platforms (`sys.platform != "win32"`).
+- `UnsupportedPlatformError`: Raised when the current runtime has no pinned helper release (currently only `win-x64` is supported; `win-arm64` uses it).
 - `ThermoHelperNotFoundError`: Raised when no executable is found at the prioritized locations, with searched paths and installation guidance.
 - `ThermoHelperVersionError`: Raised when the helper reports a mismatched version or fails to report a readable version.
 - `ThermoHelperLicenseError`: Raised when the Thermo license agreement has not been accepted via `ThermoScanHeaderExtractor.exe --agree-to-terms`.

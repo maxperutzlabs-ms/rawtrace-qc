@@ -124,6 +124,3 @@ def resolve_thermo_helper_specification(
     if selected not in release.assets and fallback in release.assets:
         selected = fallback
     return release.specification(selected)
-
-
-THERMO_HELPER_SPECIFICATION = THERMO_HELPER_RELEASE.specification("win-x64")
