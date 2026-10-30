@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 from dataclasses import replace
 from pathlib import Path
@@ -11,7 +12,6 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
 from rawtrace_qc import environment
-from rawtrace_qc.environment import helper_tool_directory
 from rawtrace_qc.errors import (
     ThermoHelperArchiveError,
     ThermoHelperChecksumError,
@@ -24,6 +24,7 @@ from rawtrace_qc.thermo import (
     download_thermo_helper_archive,
     extract_thermo_helper_archive,
     install_thermo_helper,
+    managed_thermo_helper_directory,
     verify_thermo_helper_archive,
 )
 from rawtrace_qc.thermo import installation as installation_module
@@ -53,13 +54,13 @@ def _create_archive(
 
 
 def _managed_directory(data_directory: Path, specification: ThermoHelperSpecification) -> Path:
-    return helper_tool_directory(specification.tool_name, specification.version, data_directory=data_directory)
+    return managed_thermo_helper_directory(specification, data_directory=data_directory)
 
 
 def _assert_no_staging_directories(data_directory: Path, specification: ThermoHelperSpecification) -> None:
     staging_parent = _managed_directory(data_directory, specification).parent
     if staging_parent.exists():
-        assert tuple(staging_parent.glob(f".{specification.version}-install-*")) == ()
+        assert tuple(staging_parent.glob(f".{specification.runtime}-install-*")) == ()
 
 
 class TestInstallThermoHelper:
@@ -82,6 +83,49 @@ class TestInstallThermoHelper:
         assert (managed_directory / "ThermoScanHeaderExtractor.dll").read_bytes() == b"mock-dependency"
         assert archive_path.is_file()
         _assert_no_staging_directories(data_directory, specification)
+
+    def test_installs_below_version_and_runtime_directories(self, tmp_path: Path) -> None:
+        archive_path, specification = _create_archive(tmp_path)
+        data_directory = tmp_path / "appdata"
+
+        executable = install_thermo_helper(archive_path, data_directory=data_directory, specification=specification)
+
+        expected_directory = data_directory / "tools" / "thermoscanheaderextractor" / "0.2.0" / "win-x64"
+        assert executable == expected_directory.resolve() / specification.executable_name
+
+    def test_writes_runtime_into_install_manifest(self, tmp_path: Path) -> None:
+        archive_path, specification = _create_archive(tmp_path)
+
+        executable = install_thermo_helper(
+            archive_path, data_directory=tmp_path / "appdata", specification=specification
+        )
+
+        manifest = json.loads((executable.parent / ".rawtrace-qc-thermo-helper.json").read_text(encoding="utf-8"))
+        assert manifest == {"runtime": "win-x64", "sha256": specification.sha256, "version": specification.version}
+
+    def test_installs_other_runtime_beside_existing_runtime(self, tmp_path: Path) -> None:
+        archive_path, specification = _create_archive(tmp_path)
+        arm_specification = replace(specification, runtime="win-arm64")
+        data_directory = tmp_path / "appdata"
+
+        first = install_thermo_helper(archive_path, data_directory=data_directory, specification=specification)
+        second = install_thermo_helper(archive_path, data_directory=data_directory, specification=arm_specification)
+
+        assert first.parent.parent == second.parent.parent
+        assert first.parent.name == "win-x64"
+        assert second.parent.name == "win-arm64"
+
+    def test_refuses_existing_install_whose_manifest_has_a_different_runtime(self, tmp_path: Path) -> None:
+        archive_path, specification = _create_archive(tmp_path)
+        data_directory = tmp_path / "appdata"
+        executable = install_thermo_helper(archive_path, data_directory=data_directory, specification=specification)
+        manifest_path = executable.parent / ".rawtrace-qc-thermo-helper.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["runtime"] = "win-arm64"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        with pytest.raises(ThermoHelperInstallConflictError, match="for runtime 'win-x64'"):
+            install_thermo_helper(data_directory=data_directory, specification=specification)
 
     def test_installs_downloaded_archive_through_the_same_verified_path(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

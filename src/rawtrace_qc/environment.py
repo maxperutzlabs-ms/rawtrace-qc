@@ -41,18 +41,23 @@ def default_data_directory(override: Path | str | None = None) -> Path:
 
 
 def helper_tool_directory(
-    helper_name: str, release_version: str, *, data_directory: Path | str | None = None
+    helper_name: str,
+    release_version: str,
+    runtime: str,
+    *,
+    data_directory: Path | str | None = None,
 ) -> Path:
-    """Return a helper install path isolated by helper name and release.
+    """Return a helper install path isolated by helper name, release, and runtime.
 
     Args:
         helper_name: Helper tool directory name.
         release_version: Required helper release version.
+        runtime: Runtime identifier such as `win-x64`.
         data_directory: Data directory root. If None (default), use
             `default_data_directory()`.
 
     Returns:
-        The version-specific helper directory path.
+        The version- and runtime-specific helper directory path.
     """
     root = default_data_directory(data_directory)
-    return root / "tools" / helper_name / release_version
+    return root / "tools" / helper_name / release_version / runtime

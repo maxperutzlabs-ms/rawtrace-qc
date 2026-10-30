@@ -18,6 +18,7 @@ from rawtrace_qc.thermo.locator import (
     get_thermo_helper_status,
     is_license_accepted,
     locate_thermo_helper,
+    managed_thermo_helper_directory,
     query_helper_version,
     verify_helper_version,
 )
@@ -57,6 +58,7 @@ __all__ = [
     "is_license_accepted",
     "install_thermo_helper",
     "locate_thermo_helper",
+    "managed_thermo_helper_directory",
     "query_helper_version",
     "resolve_thermo_helper_specification",
     "run_thermo_helper",

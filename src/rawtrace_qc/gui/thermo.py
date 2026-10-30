@@ -39,6 +39,7 @@ class ThermoToolManager:
                 else helper_tool_directory(
                     "thermoscanheaderextractor",
                     THERMO_HELPER_SPECIFICATION.version,
+                    THERMO_HELPER_SPECIFICATION.runtime,
                 )
             )
             .expanduser()

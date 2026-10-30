@@ -6,19 +6,15 @@ import pytest
 from rawtrace_qc import environment
 from rawtrace_qc.cli import main
 from rawtrace_qc.cli import thermo as thermo_cli_module
-from rawtrace_qc.environment import helper_tool_directory
 from rawtrace_qc.errors import ThermoHelperChecksumError, ThermoHelperDownloadError
 from rawtrace_qc.thermo import locator as locator_module
+from rawtrace_qc.thermo import managed_thermo_helper_directory
 from tests.support.mock_helper import MockThermoHelper, create_mock_helper_file
 from tests.support.thermo_helper import WIN_X64_SPECIFICATION
 
 
 def _create_helper(data_directory: Path) -> Path:
-    helper_directory = helper_tool_directory(
-        WIN_X64_SPECIFICATION.tool_name,
-        WIN_X64_SPECIFICATION.version,
-        data_directory=data_directory,
-    )
+    helper_directory = managed_thermo_helper_directory(WIN_X64_SPECIFICATION, data_directory=data_directory)
     return create_mock_helper_file(helper_directory)
 
 

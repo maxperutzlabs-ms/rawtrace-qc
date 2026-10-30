@@ -99,7 +99,9 @@ class TestThermoToolManager:
 
         assert (
             manager.install_directory
-            == (data_directory / "tools" / "thermoscanheaderextractor" / WIN_X64_SPECIFICATION.version).resolve()
+            == (
+                data_directory / "tools" / "thermoscanheaderextractor" / WIN_X64_SPECIFICATION.version / "win-x64"
+            ).resolve()
         )
         assert not data_directory.exists()
 

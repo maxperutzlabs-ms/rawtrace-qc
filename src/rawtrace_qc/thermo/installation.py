@@ -13,7 +13,6 @@ from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 from zipfile import BadZipFile, LargeZipFile, ZipFile, ZipInfo
 
-from rawtrace_qc.environment import helper_tool_directory
 from rawtrace_qc.errors import (
     ThermoHelperArchiveError,
     ThermoHelperChecksumError,
@@ -21,6 +20,7 @@ from rawtrace_qc.errors import (
     ThermoHelperInstallationError,
     ThermoHelperInstallConflictError,
 )
+from rawtrace_qc.thermo.locator import managed_thermo_helper_directory
 from rawtrace_qc.thermo.specification import (
     ThermoHelperSpecification,
     resolve_thermo_helper_specification,
@@ -69,13 +69,11 @@ def install_thermo_helper(
     if specification is None:
         specification = resolve_thermo_helper_specification()
 
-    version_directory = helper_tool_directory(
-        specification.tool_name,
-        specification.version,
-        data_directory=data_directory,
+    runtime_directory = managed_thermo_helper_directory(
+        specification, data_directory=data_directory
     ).expanduser()
-    install_parent = version_directory.parent.resolve()
-    install_directory = install_parent / version_directory.name
+    install_parent = runtime_directory.parent.resolve()
+    install_directory = install_parent / runtime_directory.name
 
     if archive_path is None and _path_exists(install_directory):
         return _existing_install_executable(install_directory, specification)
@@ -517,6 +515,7 @@ def _write_install_manifest(
     manifest_path = payload_directory / _INSTALL_MANIFEST_NAME
     manifest = {
         "version": specification.version,
+        "runtime": specification.runtime,
         "sha256": specification.sha256.casefold(),
     }
     try:
@@ -554,14 +553,16 @@ def _existing_install_executable(
     if (
         not isinstance(manifest, dict)
         or manifest.get("version") != specification.version
+        or manifest.get("runtime") != specification.runtime
         or manifest.get("sha256") != specification.sha256.casefold()
         or executable_path.is_symlink()
         or not executable_path.is_file()
     ):
         raise ThermoHelperInstallConflictError(
             f"Managed Thermo helper location {install_directory} does not match "
-            f"the pinned release v{specification.version}; refusing to "
-            "silently overwrite a different or incomplete installation."
+            f"the pinned release v{specification.version} for runtime "
+            f"{specification.runtime!r}; refusing to silently overwrite a different "
+            "or incomplete installation."
         )
     return executable_path
 

@@ -39,11 +39,11 @@ class TestDefaultDataDirectory:
 
 
 class TestHelperToolDirectory:
-    def test_includes_helper_release_version_without_creating_directories(self, tmp_path: Path) -> None:
+    def test_includes_helper_release_version_and_runtime_without_creating_directories(self, tmp_path: Path) -> None:
         data_directory = tmp_path / "appdata"
 
-        path = helper_tool_directory("thermoscanheaderextractor", "0.1.0", data_directory=data_directory)
+        path = helper_tool_directory("thermoscanheaderextractor", "0.1.0", "win-x64", data_directory=data_directory)
 
-        assert path == data_directory / "tools" / "thermoscanheaderextractor" / "0.1.0"
+        assert path == data_directory / "tools" / "thermoscanheaderextractor" / "0.1.0" / "win-x64"
         assert not path.exists()
         assert not data_directory.exists()

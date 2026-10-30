@@ -161,10 +161,8 @@ def get_thermo_helper_status(
         if explicit_path is not None:
             searched_paths.append(str(Path(explicit_path).expanduser()))
         managed_path = (
-            environment.helper_tool_directory(
-                specification.tool_name,
-                specification.version,
-                data_directory=data_directory,
+            managed_thermo_helper_directory(
+                specification, data_directory=data_directory
             )
             / specification.executable_name
         )
@@ -301,17 +299,46 @@ def find_thermo_helper_path(
                 return candidate.resolve()
 
     managed_path = (
-        environment.helper_tool_directory(
-            specification.tool_name,
-            specification.version,
-            data_directory=data_directory,
-        )
+        managed_thermo_helper_directory(specification, data_directory=data_directory)
         / specification.executable_name
     ).resolve()
     if managed_path.is_file():
         return managed_path
 
     return None
+
+
+def managed_thermo_helper_directory(
+    specification: ThermoHelperSpecification | None = None,
+    *,
+    data_directory: Path | str | None = None,
+) -> Path:
+    """Return the managed install directory of a helper release for one runtime.
+
+    The directory is `<data_directory>/tools/<tool>/<version>/<runtime>` and is
+    not created by this function.
+
+    Args:
+        specification: Release specification. If None (default), resolve the
+            specification for the current host runtime.
+        data_directory: Data directory root. If None (default), uses the
+            platform default user data directory.
+
+    Returns:
+        The managed install directory path.
+
+    Raises:
+        UnsupportedPlatformError: If no specification is given and the current
+            runtime has no pinned helper release.
+    """
+    if specification is None:
+        specification = resolve_thermo_helper_specification()
+    return environment.helper_tool_directory(
+        specification.tool_name,
+        specification.version,
+        specification.runtime,
+        data_directory=data_directory,
+    )
 
 
 def verify_helper_version(

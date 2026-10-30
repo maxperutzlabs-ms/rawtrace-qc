@@ -178,14 +178,14 @@ executable = install_thermo_helper()
 # Or install_thermo_helper(Path("/media/helper/ThermoScanHeaderExtractor-v0.2.0-win-x64.zip"))
 ```
 
-Both sources are checked against the pinned SHA-256 digest before extraction and installed through a temporary staging directory. The completed helper is atomically moved to `<user_data_dir>/tools/thermoscanheaderextractor/<version>/ThermoScanHeaderExtractor.exe`. Reinstalling the same archive is safe; an existing directory that does not match the pinned installation is left untouched and causes an installation conflict. Installation never executes the helper or accepts the Thermo license. Review and record explicit agreement through the library API described below.
+Both sources are checked against the pinned SHA-256 digest before extraction and installed through a temporary staging directory. The completed helper is atomically moved to `<user_data_dir>/tools/thermoscanheaderextractor/<version>/<runtime>/ThermoScanHeaderExtractor.exe`. Reinstalling the same archive is safe; an existing directory that does not match the pinned installation is left untouched and causes an installation conflict. Installation never executes the helper or accepts the Thermo license. Review and record explicit agreement through the library API described below.
 
 ### Helper Locating and Resolution Priority
 
 The library locates the helper without side effects, searching in strict priority order:
 
 1. **Explicit path**: A user-supplied path to the executable or its containing directory (via `explicit_path`).
-2. **Managed user data directory**: The pinned release directory in the per-user application data directory, located at `<user_data_dir>/tools/thermoscanheaderextractor/<version>/ThermoScanHeaderExtractor.exe`.
+2. **Managed user data directory**: The pinned release and runtime directory (for example `0.2.0/win-x64`) in the per-user application data directory, located at `<user_data_dir>/tools/thermoscanheaderextractor/<version>/<runtime>/ThermoScanHeaderExtractor.exe`.
 
 `find_thermo_helper_path()` checks these locations on disk without executing any process. If neither candidate exists, it returns `None`.
 
@@ -260,7 +260,7 @@ Installation verifies the pinned SHA-256 checksum and does not run the helper or
 rawtrace-qc thermo accept-license
 ```
 
-For a centrally managed installation, either install into a shared data root and pass the same `--data-directory` to status and acceptance, or point commands directly at the shared executable with `--helper-path`. A helper installed from a shared root is stored below `tools/thermoscanheaderextractor/<version>/`; a direct executable path may also name its containing directory. Because acceptance is recorded per user, every account that runs extractions, including service accounts, must accept the terms once.
+For a centrally managed installation, either install into a shared data root and pass the same `--data-directory` to status and acceptance, or point commands directly at the shared executable with `--helper-path`. A helper installed from a shared root is stored below `tools/thermoscanheaderextractor/<version>/<runtime>/`; a direct executable path may also name its containing directory. Because acceptance is recorded per user, every account that runs extractions, including service accounts, must accept the terms once.
 
 ```bash
 rawtrace-qc thermo install --data-directory \\server\rawtrace-tools
