@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
+from typing import Self
 from urllib.error import HTTPError
 from urllib.request import Request
 
@@ -48,9 +49,11 @@ class TestUrlopenOrSkip:
 
         monkeypatch.setattr(network_support, "urlopen", fail_to_open)
 
-        with pytest.raises(pytest.skip.Exception, match="Cannot reach"):
-            with network_support.urlopen_or_skip("https://example.test/asset"):
-                raise AssertionError("A failed request must not yield a response.")
+        with (
+            pytest.raises(pytest.skip.Exception, match="Cannot reach"),
+            network_support.urlopen_or_skip("https://example.test/asset"),
+        ):
+            raise AssertionError("A failed request must not yield a response.")
 
     def test_skips_proxy_statuses(self, monkeypatch: pytest.MonkeyPatch) -> None:
         def proxy_denied(url: str, timeout: float) -> None:
@@ -58,9 +61,11 @@ class TestUrlopenOrSkip:
 
         monkeypatch.setattr(network_support, "urlopen", proxy_denied)
 
-        with pytest.raises(pytest.skip.Exception, match="Network or proxy denied"):
-            with network_support.urlopen_or_skip("https://example.test/asset"):
-                raise AssertionError("A denied request must not yield a response.")
+        with (
+            pytest.raises(pytest.skip.Exception, match="Network or proxy denied"),
+            network_support.urlopen_or_skip("https://example.test/asset"),
+        ):
+            raise AssertionError("A denied request must not yield a response.")
 
     def test_does_not_skip_missing_asset(self, monkeypatch: pytest.MonkeyPatch) -> None:
         def missing_asset(url: str, timeout: float) -> None:
@@ -77,7 +82,7 @@ class TestUrlopenOrSkip:
 class TestInternetReachable:
     def test_returns_true_when_socket_connects(self, monkeypatch: pytest.MonkeyPatch) -> None:
         class _DummySocket:
-            def __enter__(self) -> _DummySocket:
+            def __enter__(self) -> Self:
                 return self
 
             def __exit__(self, *args: object) -> None:

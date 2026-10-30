@@ -133,7 +133,7 @@ class TestExtractBatch:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         raw_file = _create_raw(tmp_path / "sample.raw")
-        bruker_directory = _create_bruker(tmp_path / "run.d")
+        _create_bruker(tmp_path / "run.d")
         thermo = RecordingExtractor()
         bruker = RecordingExtractor()
         monkeypatch.setattr(workflow_module, "ThermoExtractor", lambda: thermo)
