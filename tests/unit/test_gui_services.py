@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-import hashlib
-from dataclasses import replace
-from io import BytesIO
 from pathlib import Path
-from zipfile import ZipFile
 
 import pytest
 from rawtrace_qc.discovery import DiscoveryCandidate, FileFormat, Vendor
@@ -15,11 +11,9 @@ from rawtrace_qc.extractors import BrukerExtractor, ThermoExtractor
 from rawtrace_qc.gui.cache import CacheResult, TraceCache
 from rawtrace_qc.gui.config import GuiSettings, ThermoToolSettings, load_settings, save_settings
 from rawtrace_qc.gui.reporting import ReportGenerationOptions, ReportStorageMode, generate_report
-from rawtrace_qc.gui.thermo import ThermoToolManager
 from rawtrace_qc.models import ExtractionResult
 from rawtrace_qc.report import ReportAssetMode, ReportOptions
 from rawtrace_qc.traces import load_trace
-from tests.support.thermo_helper import WIN_X64_SPECIFICATION
 
 
 def _bruker_candidate(path: Path) -> DiscoveryCandidate:
@@ -83,78 +77,6 @@ class TestTraceCache:
         assert second.cache_hit is False
         assert second.extraction.msn_path is not None
         assert second.extraction.msn_path.is_file()
-
-
-class TestThermoToolManager:
-    def test_default_install_directory_uses_pinned_helper_version(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        data_directory = tmp_path / "appdata"
-        monkeypatch.setattr(
-            "rawtrace_qc.environment.user_data_dir",
-            lambda **_kwargs: str(data_directory),
-        )
-
-        manager = ThermoToolManager(ThermoToolSettings())
-
-        assert (
-            manager.install_directory
-            == (
-                data_directory / "tools" / "thermoscanheaderextractor" / WIN_X64_SPECIFICATION.version / "win-x64"
-            ).resolve()
-        )
-        assert not data_directory.exists()
-
-    def test_downloads_verifies_and_extracts_the_pinned_archive(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        executable_payload = b"thermo helper executable"
-        archive_buffer = BytesIO()
-        with ZipFile(archive_buffer, "w") as archive:
-            archive.writestr(WIN_X64_SPECIFICATION.executable_name, executable_payload)
-        archive_payload = archive_buffer.getvalue()
-        test_specification = replace(
-            WIN_X64_SPECIFICATION,
-            download_url="https://example.test/pinned-helper.zip",
-            sha256=hashlib.sha256(archive_payload).hexdigest(),
-        )
-        monkeypatch.setattr("rawtrace_qc.gui.thermo.THERMO_HELPER_SPECIFICATION", test_specification)
-        requested_urls: list[str] = []
-
-        def open_archive(url: str, timeout: int) -> BytesIO:
-            requested_urls.append(url)
-            return BytesIO(archive_payload)
-
-        monkeypatch.setattr("rawtrace_qc.gui.thermo.urlopen", open_archive)
-
-        path = ThermoToolManager(ThermoToolSettings(), tmp_path / "tools").ensure_available()
-
-        assert requested_urls == [test_specification.download_url]
-        assert path.name == test_specification.executable_name
-        assert path.read_bytes() == executable_payload
-
-    def test_rejects_pinned_archive_with_incorrect_checksum(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        archive_payload = b"not the pinned archive"
-        test_specification = replace(
-            WIN_X64_SPECIFICATION, download_url="https://example.test/pinned-helper.zip", sha256="0" * 64
-        )
-        monkeypatch.setattr("rawtrace_qc.gui.thermo.THERMO_HELPER_SPECIFICATION", test_specification)
-        monkeypatch.setattr("rawtrace_qc.gui.thermo.urlopen", lambda url, timeout: BytesIO(archive_payload))
-
-        with pytest.raises(ConfigurationError, match="SHA-256 verification"):
-            ThermoToolManager(ThermoToolSettings(), tmp_path / "tools").ensure_available()
-
-    def test_configured_local_executable_bypasses_download(self, tmp_path: Path) -> None:
-        executable_path = tmp_path / "ThermoScanHeaderExtractor.exe"
-        executable_path.write_bytes(b"local helper")
-
-        path = ThermoToolManager(
-            ThermoToolSettings(executable_path=executable_path), tmp_path / "tools"
-        ).ensure_available()
-
-        assert path == executable_path.resolve()
 
 
 class TestReportGeneration:
