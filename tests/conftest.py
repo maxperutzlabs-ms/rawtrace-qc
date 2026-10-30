@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -40,7 +41,7 @@ def bruker_fixture(tmp_path: Path) -> Path:
 
 
 def _create_tdf(path: Path) -> None:
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute(
             "CREATE TABLE Frames ("
             "Id INTEGER PRIMARY KEY, Time REAL NOT NULL, Polarity TEXT NOT NULL, "

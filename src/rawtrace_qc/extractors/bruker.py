@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import sqlite3
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -155,7 +156,7 @@ class BrukerExtractor:
 
     @staticmethod
     def _read_frames(tdf_path: Path) -> _Frames:
-        with sqlite3.connect(tdf_path) as connection:
+        with closing(sqlite3.connect(tdf_path)) as connection:
             available_columns = {
                 row[1] for row in connection.execute("PRAGMA table_info(Frames)")
             }
@@ -218,7 +219,7 @@ class BrukerExtractor:
 
     @staticmethod
     def _read_acquisition_start_time(tdf_path: Path) -> str:
-        with sqlite3.connect(tdf_path) as connection:
+        with closing(sqlite3.connect(tdf_path)) as connection:
             available_tables = {
                 row[0]
                 for row in connection.execute(
@@ -261,7 +262,7 @@ class BrukerExtractor:
 
     @staticmethod
     def _read_analysis_id(tdf_path: Path) -> str | None:
-        with sqlite3.connect(tdf_path) as connection:
+        with closing(sqlite3.connect(tdf_path)) as connection:
             row = connection.execute(
                 "SELECT Value FROM GlobalMetadata WHERE Key = ?",
                 ("AnalysisId",),
@@ -273,7 +274,7 @@ class BrukerExtractor:
 
     @staticmethod
     def _read_dia_ms2_ids(tdf_path: Path) -> set[int]:
-        with sqlite3.connect(tdf_path) as connection:
+        with closing(sqlite3.connect(tdf_path)) as connection:
             tables = {
                 row[0]
                 for row in connection.execute(

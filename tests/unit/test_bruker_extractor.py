@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pyarrow as pa
@@ -36,7 +37,7 @@ class TestBrukerExtractor:
         assert msn.table["base_peak_intensity"].to_pylist() == [200.0, 300.0]
 
     def test_zero_ms1_rows_write_empty_artifact(self, bruker_fixture: Path, tmp_path: Path) -> None:
-        with sqlite3.connect(bruker_fixture / "analysis.tdf") as connection:
+        with closing(sqlite3.connect(bruker_fixture / "analysis.tdf")) as connection, connection:
             connection.execute("UPDATE Frames SET MsMsType = 8")
             connection.execute("DELETE FROM DiaFrameMsMsInfo")
             connection.commit()
@@ -50,7 +51,7 @@ class TestBrukerExtractor:
         assert ms1.metadata["ms_level_file"] == "ms1"
 
     def test_rows_are_ordered_by_retention_time_then_scan_id(self, bruker_fixture: Path, tmp_path: Path) -> None:
-        with sqlite3.connect(bruker_fixture / "analysis.tdf") as connection:
+        with closing(sqlite3.connect(bruker_fixture / "analysis.tdf")) as connection, connection:
             connection.executemany("UPDATE Frames SET Time = ? WHERE Id = ?", [(2.0, 1), (1.0, 2), (1.0, 3)])
             connection.execute("UPDATE Frames SET MsMsType = 0")
             connection.execute("DELETE FROM DiaFrameMsMsInfo")
@@ -68,7 +69,7 @@ class TestBrukerExtractor:
         assert artifact.table["retention_time_sec"].to_pylist() == [1.0, 1.0, 2.0]
 
     def test_duplicate_frame_ids_are_rejected(self, bruker_fixture: Path, tmp_path: Path) -> None:
-        with sqlite3.connect(bruker_fixture / "analysis.tdf") as connection:
+        with closing(sqlite3.connect(bruker_fixture / "analysis.tdf")) as connection, connection:
             connection.execute("ALTER TABLE Frames RENAME TO OriginalFrames")
             connection.execute("CREATE TABLE Frames (Id INTEGER, Time REAL, MsMsType INTEGER)")
             connection.executemany("INSERT INTO Frames VALUES (?, ?, ?)", [(1, 1.0, 0), (1, 2.0, 0)])
@@ -109,7 +110,7 @@ class TestBrukerExtractor:
         assert not output_directory.exists()
 
     def test_ms1_only_acquisition_omits_msn_artifact(self, bruker_fixture: Path, tmp_path: Path) -> None:
-        with sqlite3.connect(bruker_fixture / "analysis.tdf") as connection:
+        with closing(sqlite3.connect(bruker_fixture / "analysis.tdf")) as connection, connection:
             connection.execute("DELETE FROM Frames WHERE Id > 1")
             connection.execute("DELETE FROM DiaFrameMsMsInfo")
             connection.commit()
@@ -121,7 +122,7 @@ class TestBrukerExtractor:
         assert not (tmp_path / "ms1-only" / "sample.d.msn-trace.parquet").exists()
 
     def test_explicit_msn_selection_rejects_ms1_only_acquisition(self, bruker_fixture: Path, tmp_path: Path) -> None:
-        with sqlite3.connect(bruker_fixture / "analysis.tdf") as connection:
+        with closing(sqlite3.connect(bruker_fixture / "analysis.tdf")) as connection, connection:
             connection.execute("DELETE FROM Frames WHERE Id > 1")
             connection.execute("DELETE FROM DiaFrameMsMsInfo")
             connection.commit()
@@ -159,7 +160,7 @@ class TestBrukerExtractor:
             BrukerExtractor().extract(tmp_path / "missing.d")
 
     def test_missing_required_frames_column_is_rejected(self, bruker_fixture: Path, tmp_path: Path) -> None:
-        with sqlite3.connect(bruker_fixture / "analysis.tdf") as connection:
+        with closing(sqlite3.connect(bruker_fixture / "analysis.tdf")) as connection, connection:
             connection.execute("ALTER TABLE Frames RENAME TO IncompleteFrames")
             connection.execute("CREATE TABLE Frames (Id INTEGER, Time REAL)")
             connection.commit()
