@@ -71,7 +71,8 @@ class BrukerExtractor:
                 folder name, including `.d`.
             precision_mode: `low` for float32 trace fields, or `high` for
                 float64 trace fields. Defaults to `low`.
-            select_ms1: If True (default), write the MS1 artifact.
+            select_ms1: If True (default), write the MS1 artifact when MS1 rows
+                are present.
             select_msn: If True (default), write the MSn artifact when MSn rows
                 are present.
 
@@ -83,8 +84,9 @@ class BrukerExtractor:
         Raises:
             FileNotFoundError: If `analysis.tdf` is missing.
             ValueError: If an argument or input path is invalid.
-            RuntimeError: If an explicitly MSn-only selection has no MSn frames,
-                or required frame data cannot form a valid table.
+            RuntimeError: If `Frames` is empty, a single-level selection has no
+                frames of that level, or required frame data cannot form a valid
+                table.
         """
         resolved_input = validate_extraction_options(
             input_path,
@@ -101,6 +103,8 @@ class BrukerExtractor:
         acquisition_start_time = self._read_acquisition_start_time(tdf_path)
         source_id = self._read_analysis_id(tdf_path)
         frames = self._read_frames(tdf_path)
+        if not frames.scan_id.size:
+            raise RuntimeError("Frames contains no rows.")
         summary = self._build_summary(
             frames,
             self._read_dia_ms2_ids(tdf_path),
@@ -111,6 +115,8 @@ class BrukerExtractor:
         select_all_levels = select_ms1 and select_msn
         ms1_indices = np.flatnonzero(summary.ms_level == 1)
         msn_indices = np.flatnonzero(summary.ms_level > 1)
+        if select_ms1 and not select_all_levels and not len(ms1_indices):
+            raise RuntimeError("The input folder contains no MS1 frames.")
         if select_msn and not select_all_levels and not len(msn_indices):
             raise RuntimeError("The input folder contains no MSn frames.")
 
@@ -125,7 +131,7 @@ class BrukerExtractor:
         ms1_path = None
         msn_path = None
 
-        if select_ms1:
+        if select_ms1 and len(ms1_indices):
             ms1_path = self._write_level(
                 summary,
                 ms1_indices,

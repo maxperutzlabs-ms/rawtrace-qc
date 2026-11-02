@@ -98,7 +98,7 @@ For a single file or acquisition folder supplied by a file dialog or drag and dr
 
 `BrukerExtractor.extract()` reads native frame metadata from `analysis.tdf`, including `Frames.SummedIntensities` for total ion current and `Frames.MaxIntensity` for base-peak intensity when those optional columns are available. It writes schema-v1 Snappy Parquet artifacts using the naming convention `<run-name>.ms1-trace.parquet` and `<run-name>.msn-trace.parquet`.
 
-Both `select_ms1` and `select_msn` default to `True`. This writes every available level: an MS1 artifact is written when MS1 rows exist, and an MSn artifact is written only when MSn rows exist. Selecting only one level writes only that level. Selecting a level that does not exist raises an error, except that an all-level request omits unavailable levels. When both flags are `False`, the input is structurally checked and no output is created.
+Both `select_ms1` and `select_msn` default to `True`. This writes every available level: an MS1 artifact is written when MS1 rows exist, and an MSn artifact is written only when MSn rows exist. Selecting only one level writes only that level. Selecting a level that does not exist raises an error, except that an all-level request omits unavailable levels. A database with an empty `Frames` table raises an error because it indicates a broken acquisition. When both flags are `False`, the input is structurally checked and no output is created.
 
 Bruker MSn rows have `row_granularity` set to `frame-aggregate`. A frame can contain multiple precursor isolation events, so these rows must not be interpreted as individual precursor spectra.
 

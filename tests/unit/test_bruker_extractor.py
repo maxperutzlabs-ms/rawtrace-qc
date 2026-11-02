@@ -36,20 +36,6 @@ class TestBrukerExtractor:
         assert ms1.table["base_peak_intensity"].to_pylist() == [100.0]
         assert msn.table["base_peak_intensity"].to_pylist() == [200.0, 300.0]
 
-    def test_zero_ms1_rows_write_empty_artifact(self, bruker_fixture: Path, tmp_path: Path) -> None:
-        with closing(sqlite3.connect(bruker_fixture / "analysis.tdf")) as connection, connection:
-            connection.execute("UPDATE Frames SET MsMsType = 8")
-            connection.execute("DELETE FROM DiaFrameMsMsInfo")
-            connection.commit()
-
-        result = BrukerExtractor().extract(bruker_fixture, output_directory=tmp_path / "empty-ms1")
-
-        assert result.ms1_path is not None
-        assert result.msn_path is not None
-        ms1 = load_trace(result.ms1_path)
-        assert ms1.table.num_rows == 0
-        assert ms1.metadata["ms_level_file"] == "ms1"
-
     def test_rows_are_ordered_by_retention_time_then_scan_id(self, bruker_fixture: Path, tmp_path: Path) -> None:
         with closing(sqlite3.connect(bruker_fixture / "analysis.tdf")) as connection, connection:
             connection.executemany("UPDATE Frames SET Time = ? WHERE Id = ?", [(2.0, 1), (1.0, 2), (1.0, 3)])
@@ -131,6 +117,26 @@ class TestBrukerExtractor:
             BrukerExtractor().extract(
                 bruker_fixture, output_directory=tmp_path / "msn-only", select_ms1=False, select_msn=True
             )
+
+    def test_acquisition_without_ms1_frames_omits_ms1_artifact(self, bruker_fixture: Path, tmp_path: Path) -> None:
+        with closing(sqlite3.connect(bruker_fixture / "analysis.tdf")) as connection, connection:
+            connection.execute("UPDATE Frames SET MsMsType = 9")
+            connection.commit()
+
+        result = BrukerExtractor().extract(bruker_fixture, output_directory=tmp_path / "msn-only")
+
+        assert result.ms1_path is None
+        assert result.msn_path is not None
+        with pytest.raises(RuntimeError, match="no MS1 frames"):
+            BrukerExtractor().extract(bruker_fixture, output_directory=tmp_path / "ms1", select_msn=False)
+
+    def test_empty_frames_table_is_rejected(self, bruker_fixture: Path, tmp_path: Path) -> None:
+        with closing(sqlite3.connect(bruker_fixture / "analysis.tdf")) as connection, connection:
+            connection.execute("DELETE FROM Frames")
+            connection.commit()
+
+        with pytest.raises(RuntimeError, match="no rows"):
+            BrukerExtractor().extract(bruker_fixture, output_directory=tmp_path / "empty")
 
     def test_high_precision_writes_float64_trace_columns(self, bruker_fixture: Path, tmp_path: Path) -> None:
         result = BrukerExtractor().extract(
