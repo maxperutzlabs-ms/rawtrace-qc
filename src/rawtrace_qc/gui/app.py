@@ -15,7 +15,6 @@ from rawtrace_qc.environment import default_data_directory
 from rawtrace_qc.errors import (
     ConfigurationError,
     DiscoveryError,
-    UnsupportedPlatformError,
 )
 from rawtrace_qc.gui.cache import TraceCache
 from rawtrace_qc.gui.config import (
@@ -39,7 +38,8 @@ from rawtrace_qc.gui.theme import (
 from rawtrace_qc.gui.workflow import RawFileSelection
 from rawtrace_qc.thermo import (
     THERMO_HELPER_RELEASE,
-    detect_runtime,
+    find_host_runtime,
+    is_thermo_helper_supported,
     resolve_thermo_helper_specification,
 )
 
@@ -1735,13 +1735,9 @@ def _dialog_start_directory(path_text: str) -> str:
 
 
 def _thermo_asset_label() -> str:
-    try:
+    if is_thermo_helper_supported():
         return resolve_thermo_helper_specification().asset_name
-    except UnsupportedPlatformError:
-        try:
-            return f"Not supported on {detect_runtime()}"
-        except UnsupportedPlatformError:
-            return "Not supported on this system"
+    return f"Not supported on {find_host_runtime() or 'this system'}"
 
 
 def _thermo_settings(executable: str) -> Any:
