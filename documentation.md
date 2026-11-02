@@ -22,7 +22,8 @@ The package is library-first. Applications such as a command-line tool or GUI sh
 - [x] Multi-tab HTML report generation
 - [x] Cyclopts command-line interface
 - [x] Thermo helper status, installation, and explicit license setup
-- [ ] Graphical user interface (pyside6)
+- [x] Graphical user interface (PySide6)
+    - [ ] Thermo helper download, installation, and license acceptance
 
 ## Library API
 
@@ -232,7 +233,7 @@ Use `extract` to process one or more acquisition paths:
 
 ```bash
 rawtrace-qc extract sample.raw run.d
-rawtrace-qc extract /data/acquisitions --recursive --output-dir /data/traces --precision high --no-msn
+rawtrace-qc extract /data/acquisitions --recursive --output-dir /data/traces --precision high --ms1
 ```
 
 For each supplied path, the library first validates it as one complete acquisition. A valid Thermo `.raw` file or Bruker `.d` directory is processed directly. Any path that is not a valid acquisition is treated as a directory to scan; a path that cannot be scanned is reported as a discovery issue. By default, directory scans inspect direct children. `--recursive` includes descendants, while discovery still treats a complete Bruker `.d` directory as one acquisition rather than scanning inside it.
@@ -403,11 +404,11 @@ Choose a source folder and scan either direct children or descendants. Selecting
 
 The selected raw-file list keeps unique resolved paths, supports multi-selection removal, select-all/select-none controls, drag and drop, and file or folder dialogs. Each selected path has an active checkbox, and only active paths participate in report generation.
 
-GUI settings are stored as JSON in the platform user configuration directory. They include discovery thresholds in megabytes and minutes (converted internally to bytes and seconds for discovery), recursive/direct scope, preconfigured patterns, the trace-cache directory, the permanent-report directory, and ThermScanHeaderExtractor settings. Trace cache keys include source metadata, the vendor, extractor type, precision, and selected MS levels; each key uses the first 16 hexadecimal characters of its SHA-256 digest. Cached artifacts use short filenames (`trace.ms1-trace.parquet` and `trace.msn-trace.parquet`), while their metadata retains the original raw filename. Invalid or incomplete Parquet cache entries are rebuilt through the extractor and validated before use.
+GUI settings are stored as JSON in the platform user configuration directory. They include discovery thresholds in megabytes and minutes (converted internally to bytes and seconds for discovery), recursive/direct scope, preconfigured patterns, the trace-cache directory, the permanent-report directory, and ThermoScanHeaderExtractor settings. Trace cache keys include source metadata, the vendor, extractor type, precision, and selected MS levels; each key uses the first 16 hexadecimal characters of its SHA-256 digest. Cached artifacts use short filenames (`trace.ms1-trace.parquet` and `trace.msn-trace.parquet`), while their metadata retains the original raw filename. Invalid or incomplete Parquet cache entries are rebuilt through the extractor and validated before use.
 
 Reports can be temporary, in which case the GUI owns their temporary directories until it closes, or permanent, in which case the selected report directory is used. The default report uses embedded Plotly assets and can be opened immediately in the default browser.
 
-Thermo GUI reports use the same `ThermoExtractor` and trace cache as the CLI. The GUI does not silently install the helper or accept its license; configure an explicit helper executable in GUI settings or use the library's managed installation path.
+Thermo GUI reports use the same `ThermoExtractor` as the CLI, together with the GUI's trace cache. The GUI cannot currently download or install the helper or accept its license, so set it up first with the CLI (`uv sync --extra cli --extra gui`, then `rawtrace-qc thermo install` and `rawtrace-qc thermo accept-license`) or the equivalent library functions. Then leave the GUI's local executable setting empty to use the managed installation, or point it at an existing executable. If the helper is not ready, report generation fails and the GUI shows the error.
 
 ## Developer Guide
 

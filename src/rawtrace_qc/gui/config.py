@@ -15,7 +15,7 @@ from rawtrace_qc.gui.patterns import FilenamePattern, PatternMode
 
 @dataclass(frozen=True, slots=True)
 class ThermoToolSettings:
-    """Configure an optional local ThermScanHeaderExtractor executable."""
+    """Configure an optional local ThermoScanHeaderExtractor executable."""
 
     executable_path: Path | None = None
 

@@ -13,7 +13,7 @@ uv sync --extra cli
 rawtrace-qc thermo status
 ```
 
-The CLI supports helper installation from the pinned download or a local ZIP, explicit license acceptance, trace extraction, and HTML report generation. See `documentation.md` for offline setup, shared helper paths, license handling, and upgrade details.
+The CLI supports helper installation from the pinned download or a local ZIP, explicit license acceptance, and trace extraction. HTML reports are generated through the library or the GUI. See `documentation.md` for offline setup, shared helper paths, license handling, and upgrade details.
 
 ## Development
 
@@ -42,4 +42,4 @@ rawtrace-qc-gui
 
 Ruff formatting is applied to tests with the separate 120-character test configuration. Test linting is intentionally not enforced.
 
-See `documentation.md` and `implementation-plan.md` for the project design and planned workflows.
+See `documentation.md` for the project design and current workflows.

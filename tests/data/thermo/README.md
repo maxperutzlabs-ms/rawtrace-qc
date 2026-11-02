@@ -7,7 +7,6 @@ This directory contains a small real Thermo Orbitrap Exploris 480 acquisition fi
 - **Instrument Model:** Thermo Orbitrap Exploris 480
 - **Serial Number / Source ID:** `MA10459C_20260930114656`
 - **Acquisition Start Time:** `2026-09-30T11:46:56Z` (ISO-8601 UTC)
-- **Acquisition Path:** `D:\E1_data\VBCF\MS_Service_MethDev\Valasek\AU_8cm_75um\2026-09-29`
 - **Experiment Type:** Data-Independent Acquisition (DIA), 3 cycles
 - **FAIMS:** None (no FAIMS compensation voltage)
 
