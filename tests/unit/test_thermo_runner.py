@@ -126,7 +126,7 @@ class TestRunThermoHelper:
                 args=command,
                 returncode=4,
                 stdout=b"captured output",
-                stderr=b"captured error",
+                stderr=b"captured \xff error",
             )
 
         monkeypatch.setattr(runner_module, "_execute_process", return_failure)
@@ -135,7 +135,7 @@ class TestRunThermoHelper:
             run_thermo_helper(["helper.exe", "input.raw"])
 
         assert error.value.stdout == "captured output"
-        assert error.value.stderr == "captured error"
+        assert error.value.stderr == r"captured \xff error"
 
     def test_translates_timeout_from_mocked_process(self, monkeypatch: pytest.MonkeyPatch) -> None:
         def raise_timeout(command: list[str], *, timeout: float) -> subprocess.CompletedProcess[bytes]:

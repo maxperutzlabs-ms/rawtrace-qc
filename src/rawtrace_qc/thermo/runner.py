@@ -93,7 +93,8 @@ def run_thermo_helper(
         ThermoHelperCommandError: If the helper exits with a non-zero status.
         ThermoHelperExecutableNotFoundError: If the executable cannot be
             started because it is missing.
-        ThermoHelperOutputError: If standard output or error is not valid UTF-8.
+        ThermoHelperOutputError: If the output of a successful run is not valid
+            UTF-8.
         ThermoHelperTimeoutError: If the process exceeds `timeout`.
         ThermoHelperExecutionError: If another operating-system error prevents
             process execution.
@@ -130,6 +131,14 @@ def run_thermo_helper(
             stderr="",
         ) from error
 
+    if result.returncode != 0:
+        raise ThermoHelperCommandError(
+            f"ThermoScanHeaderExtractor command {command_arguments!r} exited "
+            f"with status {result.returncode}.",
+            stdout=_decode_output(result.stdout, errors="backslashreplace"),
+            stderr=_decode_output(result.stderr, errors="backslashreplace"),
+        )
+
     try:
         stdout = _decode_output(result.stdout)
         stderr = _decode_output(result.stderr)
@@ -140,14 +149,6 @@ def run_thermo_helper(
             stdout=_decode_output(result.stdout, errors="backslashreplace"),
             stderr=_decode_output(result.stderr, errors="backslashreplace"),
         ) from error
-
-    if result.returncode != 0:
-        raise ThermoHelperCommandError(
-            f"ThermoScanHeaderExtractor command {command_arguments!r} exited "
-            f"with status {result.returncode}.",
-            stdout=stdout,
-            stderr=stderr,
-        )
 
     return subprocess.CompletedProcess(
         args=command_arguments,
