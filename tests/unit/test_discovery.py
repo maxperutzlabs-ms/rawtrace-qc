@@ -321,12 +321,22 @@ class TestDiscoverInputs:
         assert [candidate.path for candidate in result.candidates] == [raw_file]
         assert result.issues == ()
 
-    def test_creates_no_issues_when_glob_matches_only_non_acquisition_files(self, tmp_path: Path) -> None:
+    def test_reports_glob_matching_only_non_acquisition_files(self, tmp_path: Path) -> None:
         (tmp_path / "notes.txt").write_text("not an acquisition")
+        pattern = tmp_path / "*.txt"
 
-        result = discover_inputs((tmp_path / "*.txt",), _options())
+        result = discover_inputs((pattern,), _options())
 
         assert result.candidates == ()
+        assert [(issue.path, issue.code) for issue in result.issues] == [(pattern, "no_candidates")]
+
+    def test_glob_with_a_candidate_ignores_empty_matched_folders(self, tmp_path: Path) -> None:
+        raw_file = _write_file(tmp_path / "sample.raw", 1)
+        (tmp_path / "logs").mkdir()
+
+        result = discover_inputs((tmp_path / "*",), _options())
+
+        assert [candidate.path for candidate in result.candidates] == [raw_file]
         assert result.issues == ()
 
     def test_reports_non_acquisition_literal_file_without_directory_error(self, tmp_path: Path) -> None:

@@ -39,12 +39,12 @@ def discover_inputs(
     Each input is expanded independently of the discovery scope. Glob patterns
     support `*`, `?`, character classes, and recursive `**`. Each matching path
     is first validated as a complete acquisition; paths that are not
-    acquisitions are scanned only when they are directories. Unsupported files
-    from glob expansions are ignored, while an unsupported literal file
-    produces a `no_candidates` issue. Candidates found through multiple inputs
-    are included once. In recursive scope, supplied directories are processed
-    ancestor-first, and nested directories beneath a traversed input root are
-    not traversed repeatedly.
+    acquisitions are scanned only when they are directories. An input that
+    yields no candidates produces one `no_candidates` issue, unless it already
+    has another issue or lies below a root traversed for a different input.
+    Candidates found through multiple inputs are included once. In recursive
+    scope, supplied directories are processed ancestor-first, and nested
+    directories beneath a traversed input root are not traversed repeatedly.
 
     All non-fatal input-resolution and traversal issues are returned.
 
@@ -220,6 +220,7 @@ class _PathDiscovery:
     validated_candidate: DiscoveryCandidate | None = None
     discovered_candidates: list[DiscoveryCandidate] = field(default_factory=list)
     issues: list[DiscoveryIssue] = field(default_factory=list)
+    covered: bool = False
 
 
 @dataclass
@@ -298,47 +299,39 @@ def _discover_resolved_directories(
     if options.scope is DiscoveryScope.RECURSIVE:
         resolved_paths.sort(key=lambda result: len(result.path.parts))
 
-    scanned_roots: list[Path] = []
+    scanned_roots: list[_PathDiscovery] = []
     for path_discovery in resolved_paths:
-        if path_discovery.validated_candidate is not None:
+        if (
+            path_discovery.validated_candidate is not None
+            or not path_discovery.path.is_dir()
+        ):
             continue
-        if path_discovery.path.is_dir():
-            if options.scope is DiscoveryScope.RECURSIVE and any(
-                path_discovery.path.is_relative_to(root) for root in scanned_roots
-            ):
-                continue
-            try:
-                discovery_result = discover(path_discovery.path, options, registry)
-            except DiscoveryError as error:
-                path_discovery.issues.append(
-                    DiscoveryIssue(
-                        path_discovery.path, str(error), code="input_resolution"
-                    )
+        if options.scope is DiscoveryScope.RECURSIVE:
+            covering_roots = [
+                root
+                for root in scanned_roots
+                if path_discovery.path.is_relative_to(root.path)
+            ]
+            if covering_roots:
+                path_discovery.covered = any(
+                    root.input_path != path_discovery.input_path
+                    for root in covering_roots
                 )
                 continue
-
-            scanned_roots.append(path_discovery.path)
-            path_discovery.issues.extend(
-                DiscoveryIssue(issue.path, issue.message, issue.code)
-                for issue in discovery_result.issues
-            )
-            path_discovery.discovered_candidates.extend(discovery_result.candidates)
-            if not discovery_result.candidates:
-                path_discovery.issues.append(
-                    DiscoveryIssue(
-                        path_discovery.path,
-                        "No supported complete acquisitions were found.",
-                        code="no_candidates",
-                    )
-                )
-        elif not glob.has_magic(os.fspath(path_discovery.input_path)):
+        try:
+            discovery_result = discover(path_discovery.path, options, registry)
+        except DiscoveryError as error:
             path_discovery.issues.append(
-                DiscoveryIssue(
-                    path_discovery.path,
-                    "No supported complete acquisitions were found.",
-                    code="no_candidates",
-                )
+                DiscoveryIssue(path_discovery.path, str(error), code="input_resolution")
             )
+            continue
+
+        scanned_roots.append(path_discovery)
+        path_discovery.issues.extend(
+            DiscoveryIssue(issue.path, issue.message, issue.code)
+            for issue in discovery_result.issues
+        )
+        path_discovery.discovered_candidates.extend(discovery_result.candidates)
 
 
 def _build_discovery_result(
@@ -370,8 +363,27 @@ def _build_discovery_result(
                     continue
                 seen.add(key)
                 candidates.append(candidate)
+        issue = _no_candidates_issue(input_discovery)
+        if issue is not None:
+            issues.append(issue)
 
     return DiscoveryResult(tuple(candidates), tuple(issues))
+
+
+def _no_candidates_issue(input_discovery: _InputDiscovery) -> DiscoveryIssue | None:
+    if input_discovery.issue is not None or any(
+        path_discovery.covered
+        or path_discovery.issues
+        or path_discovery.validated_candidate is not None
+        or path_discovery.discovered_candidates
+        for path_discovery in input_discovery.resolved_paths
+    ):
+        return None
+    return DiscoveryIssue(
+        input_discovery.path,
+        "No supported complete acquisitions were found.",
+        code="no_candidates",
+    )
 
 
 def _validated_candidates(
