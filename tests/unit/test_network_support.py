@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
-from typing import Self
 from urllib.error import HTTPError
 from urllib.request import Request
 
@@ -79,59 +78,19 @@ class TestUrlopenOrSkip:
         assert error.value.code == 404
 
 
-class TestInternetReachable:
-    def test_returns_true_when_socket_connects(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        class _DummySocket:
-            def __enter__(self) -> Self:
-                return self
-
-            def __exit__(self, *args: object) -> None:
-                pass
-
-        monkeypatch.setattr("tests.support.collection.socket.create_connection", lambda target, timeout: _DummySocket())
-
-        assert collection_support.internet_reachable() is True
-
-    def test_returns_false_on_socket_os_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        def fail_connection(target: tuple[str, int], timeout: float) -> None:
-            raise OSError("connection refused")
-
-        monkeypatch.setattr("tests.support.collection.socket.create_connection", fail_connection)
-
-        assert collection_support.internet_reachable() is False
-
-
 class TestTagTestItems:
-    def test_tags_items_by_folder_and_skips_network_when_offline(self, tmp_path: Path) -> None:
+    def test_tags_items_by_folder(self, tmp_path: Path) -> None:
         unit_item = _CollectedItem(tmp_path / "unit" / "test_unit.py")
-        network_item = _CollectedItem(tmp_path / "network" / "test_network.py")
         integration_item = _CollectedItem(tmp_path / "integration" / "test_integration.py")
 
-        collection_support.tag_test_items(
-            [unit_item, network_item, integration_item], tests_root=tmp_path, reachable=False
-        )
+        collection_support.tag_test_items([unit_item, integration_item], tests_root=tmp_path)
 
         assert [m.mark.name for m in unit_item.markers] == ["unit"]
-        assert [m.mark.name for m in network_item.markers] == ["network", "skip"]
-        assert network_item.markers[1].mark.kwargs["reason"] == "no internet connection to GitHub"
-        assert [m.mark.name for m in integration_item.markers] == ["integration"]
-
-    def test_tags_items_by_folder_without_skipping_network_when_online(self, tmp_path: Path) -> None:
-        unit_item = _CollectedItem(tmp_path / "unit" / "test_unit.py")
-        network_item = _CollectedItem(tmp_path / "network" / "test_network.py")
-        integration_item = _CollectedItem(tmp_path / "integration" / "test_integration.py")
-
-        collection_support.tag_test_items(
-            [unit_item, network_item, integration_item], tests_root=tmp_path, reachable=True
-        )
-
-        assert [m.mark.name for m in unit_item.markers] == ["unit"]
-        assert [m.mark.name for m in network_item.markers] == ["network"]
         assert [m.mark.name for m in integration_item.markers] == ["integration"]
 
     def test_unmatched_items_do_not_receive_tier_markers(self, tmp_path: Path) -> None:
         other_item = _CollectedItem(tmp_path / "other" / "test_other.py")
 
-        collection_support.tag_test_items([other_item], tests_root=tmp_path, reachable=True)
+        collection_support.tag_test_items([other_item], tests_root=tmp_path)
 
         assert other_item.markers == []
