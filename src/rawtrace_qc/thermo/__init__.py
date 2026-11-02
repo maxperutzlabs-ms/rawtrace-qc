@@ -26,7 +26,7 @@ from rawtrace_qc.thermo.runner import (
     build_thermo_helper_command,
     run_thermo_helper,
 )
-from rawtrace_qc.thermo.runtime import detect_runtime
+from rawtrace_qc.thermo.runtime import detect_runtime, find_host_runtime
 from rawtrace_qc.thermo.specification import (
     RUNTIME_FALLBACKS,
     THERMO_HELPER_NAME,
@@ -34,6 +34,7 @@ from rawtrace_qc.thermo.specification import (
     ThermoHelperAsset,
     ThermoHelperRelease,
     ThermoHelperSpecification,
+    is_thermo_helper_supported,
     resolve_thermo_helper_specification,
 )
 
@@ -52,10 +53,12 @@ __all__ = [
     "download_thermo_helper_archive",
     "extract_thermo_helper_archive",
     "execute_helper_process",
+    "find_host_runtime",
     "find_thermo_helper_path",
     "get_thermo_helper_status",
     "get_thermo_license_text",
     "is_license_accepted",
+    "is_thermo_helper_supported",
     "install_thermo_helper",
     "locate_thermo_helper",
     "managed_thermo_helper_directory",

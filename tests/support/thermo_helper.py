@@ -10,13 +10,13 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 
 import pytest
+from rawtrace_qc import environment
 from rawtrace_qc.errors import (
     ThermoHelperArchiveError,
     ThermoHelperChecksumError,
     ThermoHelperDownloadError,
     ThermoHelperNotFoundError,
     ThermoHelperVersionError,
-    UnsupportedPlatformError,
 )
 from rawtrace_qc.thermo import (
     THERMO_HELPER_RELEASE,
@@ -25,6 +25,7 @@ from rawtrace_qc.thermo import (
     download_thermo_helper_archive,
     get_thermo_helper_status,
     install_thermo_helper,
+    is_thermo_helper_supported,
     resolve_thermo_helper_specification,
     verify_thermo_helper_archive,
 )
@@ -72,10 +73,12 @@ def resolve_specification_or_skip() -> ThermoHelperSpecification:
     Returns:
         The helper specification for the current host runtime.
     """
-    try:
-        return resolve_thermo_helper_specification()
-    except UnsupportedPlatformError as error:
-        pytest.skip(f"ThermoScanHeaderExtractor integration is not supported on this host: {error}")
+    if not is_thermo_helper_supported():
+        pytest.skip(
+            f"ThermoScanHeaderExtractor is not supported on platform {environment.get_platform()!r} and machine "
+            f"{environment.get_machine()!r}. Supported runtimes are {sorted(THERMO_HELPER_RELEASE.assets)}."
+        )
+    return resolve_thermo_helper_specification()
 
 
 def get_or_download_thermo_helper_archive(

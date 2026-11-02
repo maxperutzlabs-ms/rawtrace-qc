@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from rawtrace_qc.errors import UnsupportedPlatformError
-from rawtrace_qc.thermo.runtime import detect_runtime
+from rawtrace_qc.thermo.runtime import detect_runtime, find_host_runtime
 
 THERMO_HELPER_NAME = "thermoscanheaderextractor"
 
@@ -120,7 +120,37 @@ def resolve_thermo_helper_specification(
             neither the runtime nor its fallback has a pinned asset.
     """
     selected = detect_runtime() if runtime is None else runtime
-    fallback = RUNTIME_FALLBACKS.get(selected)
-    if selected not in release.assets and fallback in release.assets:
-        selected = fallback
-    return release.specification(selected)
+    return release.specification(_pinned_runtime(selected, release))
+
+
+def is_thermo_helper_supported(
+    runtime: str | None = None,
+    *,
+    release: ThermoHelperRelease = THERMO_HELPER_RELEASE,
+) -> bool:
+    """Return whether the helper is available for a runtime.
+
+    A runtime is supported if it has a pinned asset in `release`, or if its
+    entry in `RUNTIME_FALLBACKS` does. This check never raises for an
+    unrecognized host, and does not check whether the helper is installed.
+
+    Args:
+        runtime: Runtime identifier such as `win-x64`. If None (default),
+            detect the runtime of the current host.
+        release: Pinned release to check. Defaults to `THERMO_HELPER_RELEASE`.
+
+    Returns:
+        True if `resolve_thermo_helper_specification` can resolve an asset for
+        the runtime, otherwise False.
+    """
+    selected = find_host_runtime() if runtime is None else runtime
+    if selected is None:
+        return False
+    return _pinned_runtime(selected, release) in release.assets
+
+
+def _pinned_runtime(runtime: str, release: ThermoHelperRelease) -> str:
+    if runtime in release.assets:
+        return runtime
+    fallback = RUNTIME_FALLBACKS.get(runtime, runtime)
+    return fallback if fallback in release.assets else runtime

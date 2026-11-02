@@ -32,6 +32,29 @@ def _archive_specification(payload: bytes) -> resolver.ThermoHelperSpecification
     )
 
 
+class TestResolveSpecificationOrSkip:
+    @pytest.mark.parametrize("machine", ["AMD64", "ARM64"])
+    def test_returns_win_x64_specification_on_supported_host(
+        self, monkeypatch: pytest.MonkeyPatch, machine: str
+    ) -> None:
+        monkeypatch.setattr(environment, "get_platform", lambda: "win32")
+        monkeypatch.setattr(environment, "get_machine", lambda: machine)
+
+        assert resolver.resolve_specification_or_skip() == resolver.WIN_X64_SPECIFICATION
+
+    @pytest.mark.parametrize(
+        ("platform_name", "machine"), [("linux", "x86_64"), ("darwin", "arm64"), ("freebsd13", "amd64")]
+    )
+    def test_skips_on_unsupported_or_unrecognized_host_and_names_the_host(
+        self, monkeypatch: pytest.MonkeyPatch, platform_name: str, machine: str
+    ) -> None:
+        monkeypatch.setattr(environment, "get_platform", lambda: platform_name)
+        monkeypatch.setattr(environment, "get_machine", lambda: machine)
+
+        with pytest.raises(pytest.skip.Exception, match=rf"{platform_name!r} and machine {machine!r}"):
+            resolver.resolve_specification_or_skip()
+
+
 class TestGetOrDownloadThermoHelperArchive:
     def test_downloads_missing_archive_once_and_reuses_verified_cache(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

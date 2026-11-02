@@ -5,7 +5,24 @@ from __future__ import annotations
 import pytest
 from rawtrace_qc import environment
 from rawtrace_qc.errors import UnsupportedPlatformError
-from rawtrace_qc.thermo import detect_runtime
+from rawtrace_qc.thermo import detect_runtime, find_host_runtime
+
+
+class TestFindHostRuntime:
+    def test_returns_runtime_of_recognized_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(environment, "get_platform", lambda: "linux")
+        monkeypatch.setattr(environment, "get_machine", lambda: "aarch64")
+
+        assert find_host_runtime() == "linux-arm64"
+
+    @pytest.mark.parametrize(("platform_name", "machine"), [("freebsd13", "amd64"), ("linux", "riscv64")])
+    def test_returns_none_for_unrecognized_host(
+        self, monkeypatch: pytest.MonkeyPatch, platform_name: str, machine: str
+    ) -> None:
+        monkeypatch.setattr(environment, "get_platform", lambda: platform_name)
+        monkeypatch.setattr(environment, "get_machine", lambda: machine)
+
+        assert find_host_runtime() is None
 
 
 class TestDetectRuntime:

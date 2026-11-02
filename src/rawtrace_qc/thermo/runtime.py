@@ -14,6 +14,20 @@ _ARCHITECTURES = {
 }
 
 
+def find_host_runtime() -> str | None:
+    """Return the runtime identifier of the current host, if it is recognized.
+
+    Returns:
+        The runtime identifier such as `win-x64`, or None if the operating
+        system or CPU architecture is not recognized.
+    """
+    operating_system = _OPERATING_SYSTEMS.get(environment.get_platform())
+    architecture = _ARCHITECTURES.get(environment.get_machine().casefold())
+    if operating_system is None or architecture is None:
+        return None
+    return f"{operating_system}-{architecture}"
+
+
 def detect_runtime() -> str:
     """Return the runtime identifier of the current host.
 
@@ -27,16 +41,14 @@ def detect_runtime() -> str:
         UnsupportedPlatformError: If the operating system or CPU architecture
             is not recognized.
     """
-    platform_name = environment.get_platform()
-    machine = environment.get_machine()
-    operating_system = _OPERATING_SYSTEMS.get(platform_name)
-    architecture = _ARCHITECTURES.get(machine.casefold())
-    if operating_system is None or architecture is None:
+    runtime = find_host_runtime()
+    if runtime is None:
         raise UnsupportedPlatformError(
             f"Cannot determine the Thermo helper runtime for platform "
-            f"{platform_name!r} and machine {machine!r}. Supported operating "
+            f"{environment.get_platform()!r} and machine "
+            f"{environment.get_machine()!r}. Supported operating "
             f"systems are {sorted(_OPERATING_SYSTEMS)} and supported CPU "
             "architectures are "
             f"{sorted(set(_ARCHITECTURES.values()))}."
         )
-    return f"{operating_system}-{architecture}"
+    return runtime

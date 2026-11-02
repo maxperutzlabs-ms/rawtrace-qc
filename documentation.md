@@ -163,7 +163,7 @@ The helper remains separate because it uses Thermo's Windows-specific RAW access
 
 ### Pinned Release Specification
 
-The expected helper release is pinned in `rawtrace_qc.thermo.THERMO_HELPER_RELEASE`. It defines the exact release version (`0.2.0`) and, per runtime, the asset archive name, archive format, SHA-256 checksum digest, and executable name (`ThermoScanHeaderExtractor.exe` for `win-x64`); the official download URL is derived from the version and asset name. `resolve_thermo_helper_specification()` detects the host runtime (for example `win-x64`) and returns the matching `ThermoHelperSpecification`. A runtime without a pinned asset raises `UnsupportedPlatformError`, except that `win-arm64` falls back to the `win-x64` asset, which Windows on Arm runs under x64 emulation.
+The expected helper release is pinned in `rawtrace_qc.thermo.THERMO_HELPER_RELEASE`. It defines the exact release version (`0.2.0`) and, per runtime, the asset archive name, archive format, SHA-256 checksum digest, and executable name (`ThermoScanHeaderExtractor.exe` for `win-x64`); the official download URL is derived from the version and asset name. `resolve_thermo_helper_specification()` detects the host runtime (for example `win-x64`) and returns the matching `ThermoHelperSpecification`. A runtime without a pinned asset raises `UnsupportedPlatformError`, except that `win-arm64` falls back to the `win-x64` asset, which Windows on Arm runs under x64 emulation. To check for support without handling an exception, call `is_thermo_helper_supported()`, which returns False on an unsupported or unrecognized host.
 
 ### Install the Helper
 
