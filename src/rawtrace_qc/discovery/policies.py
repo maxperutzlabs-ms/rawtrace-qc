@@ -113,7 +113,7 @@ def _valid_bruker_directory(
         try:
             if member.is_symlink() or not member.is_file(follow_symlinks=False):
                 continue
-            member_metadata = member.stat(follow_symlinks=False)
+            member_metadata = os.stat(member.path, follow_symlinks=False)
         except OSError:
             continue
         suffix = member.name.casefold()
