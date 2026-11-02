@@ -5,14 +5,24 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from rawtrace_qc.errors import ArtifactValidationError, ThermoHelperCommandError
-from rawtrace_qc.extractors.common import validate_extraction_options
+from rawtrace_qc.errors import (
+    ArtifactValidationError,
+    ThermoHelperCommandError,
+    ThermoHelperTimeoutError,
+)
+from rawtrace_qc.extractors.common import (
+    missing_level_error,
+    read_error,
+    validate_extraction_options,
+)
 from rawtrace_qc.extractors.protocol import PrecisionMode
 from rawtrace_qc.models import ExtractionResult
 from rawtrace_qc.thermo.locator import locate_thermo_helper
 from rawtrace_qc.thermo.runner import build_thermo_helper_command, run_thermo_helper
 from rawtrace_qc.thermo.specification import ThermoHelperSpecification
 from rawtrace_qc.traces import load_trace
+
+_HELPER_SETUP_EXIT_CODES = (4, 5)
 
 
 class ThermoExtractor:
@@ -91,9 +101,11 @@ class ThermoExtractor:
             ThermoHelperNotFoundError: If the helper executable cannot be located.
             ThermoHelperVersionError: If the helper version does not match.
             ThermoHelperLicenseError: If the helper license is not accepted.
-            ThermoHelperExecutionError: If the helper fails or times out.
+            ThermoHelperExecutionError: If the helper cannot be run or reports a
+                license failure.
+            ExtractionError: If the file cannot be read, reading times out, or a
+                single-level selection has no scans of that level.
             ArtifactValidationError: If the produced trace files fail validation.
-            RuntimeError: If an explicitly MSn-only selection has no MSn scans.
         """
         resolved_input = validate_extraction_options(
             input_path,
@@ -143,34 +155,36 @@ class ThermoExtractor:
                 try:
                     run_thermo_helper(command, timeout=self._timeout)
                 except ThermoHelperCommandError as error:
-                    if (
-                        not select_ms1
-                        and select_msn
-                        and _reports_missing_msn_scans(error)
+                    if error.returncode in _HELPER_SETUP_EXIT_CODES:
+                        raise
+                    level = "MS1" if select_ms1 else "MSn"
+                    if select_ms1 != select_msn and _reports_missing_level(
+                        error, level
                     ):
-                        raise RuntimeError(
-                            "The input file contains no MSn scans."
-                        ) from error
-                    raise
+                        raise missing_level_error(resolved_input, level) from error
+                    raise read_error(resolved_input, _helper_reason(error)) from error
+                except ThermoHelperTimeoutError as error:
+                    raise read_error(
+                        resolved_input,
+                        f"Reading timed out after {self._timeout} seconds.",
+                    ) from error
 
                 staged_ms1 = temp_output_dir / f"{file_stem}.ms1-trace.parquet"
                 staged_msn = temp_output_dir / f"{file_stem}.msn-trace.parquet"
 
-                if select_ms1 and not staged_ms1.is_file():
-                    raise ArtifactValidationError(
-                        f"Expected MS1 trace file was not created: {staged_ms1}"
-                    )
-                if select_msn and not staged_msn.is_file() and not select_ms1:
-                    raise RuntimeError("The input file contains no MSn scans.")
+                has_ms1 = select_ms1 and staged_ms1.is_file()
+                has_msn = select_msn and staged_msn.is_file()
+                if not has_ms1 and not has_msn:
+                    raise read_error(resolved_input, "The helper wrote no trace files.")
 
-                if select_ms1:
+                if has_ms1:
                     _validate_thermo_trace(
                         staged_ms1,
                         expected_ms_level_file="ms1",
                         precision_mode=precision_mode,
                         source_filename=resolved_input.name,
                     )
-                if select_msn and staged_msn.is_file():
+                if has_msn:
                     _validate_thermo_trace(
                         staged_msn,
                         expected_ms_level_file="msn",
@@ -180,12 +194,12 @@ class ThermoExtractor:
 
                 published_files: list[Path] = []
                 try:
-                    if select_ms1:
+                    if has_ms1:
                         final_ms1_path = destination_directory / staged_ms1.name
                         staged_ms1.replace(final_ms1_path)
                         published_files.append(final_ms1_path)
 
-                    if select_msn and staged_msn.is_file():
+                    if has_msn:
                         final_msn_path = destination_directory / staged_msn.name
                         staged_msn.replace(final_msn_path)
                         published_files.append(final_msn_path)
@@ -241,14 +255,13 @@ def _validate_thermo_trace(
         )
 
 
-def _reports_missing_msn_scans(error: ThermoHelperCommandError) -> bool:
-    output = f"{error.stdout}\n{error.stderr}".casefold()
-    mentions_msn = any(marker in output for marker in ("msn", "ms2", "ms level 2"))
-    indicates_missing = any(
-        marker in output
-        for marker in ("no ", "not found", "not present", "absent", "missing")
-    )
-    describes_scans = any(
-        marker in output for marker in ("scan", "spectrum", "spectra", "level")
-    )
-    return mentions_msn and indicates_missing and describes_scans
+def _helper_reason(error: ThermoHelperCommandError) -> str:
+    for output in (error.stderr, error.stdout):
+        lines = [line.strip() for line in output.splitlines() if line.strip()]
+        if lines:
+            return lines[-1].removeprefix("ERROR: ")
+    return f"The helper exited with status {error.returncode}."
+
+
+def _reports_missing_level(error: ThermoHelperCommandError, level: str) -> bool:
+    return f"contains no {level} scans" in f"{error.stdout}\n{error.stderr}"

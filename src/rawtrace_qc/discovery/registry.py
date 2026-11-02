@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator
-from pathlib import Path
+from collections.abc import Callable, Iterator
 
-from rawtrace_qc.discovery.models import TraversalTree
+from rawtrace_qc.discovery.models import TraversalTree, ValidationResult
 from rawtrace_qc.errors import ConfigurationError
 
-VendorValidator = Callable[[TraversalTree, int, float, float], Iterable[Path]]
+VendorValidator = Callable[[TraversalTree, int, float, float], ValidationResult]
 
 
 Registration = tuple[str, str, VendorValidator]
@@ -27,7 +26,8 @@ class DiscoveryRegistry:
         Args:
             vendor: Non-empty vendor identifier such as `bruker`.
             format: Non-empty format identifier such as `d`.
-            validator: Callable returning valid paths from a traversal tree.
+            validator: Callable returning valid and skipped paths from a
+                traversal tree.
 
         Raises:
             ConfigurationError: If an identifier is empty or already registered.

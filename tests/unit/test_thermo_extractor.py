@@ -10,6 +10,7 @@ import pytest
 from rawtrace_qc import environment
 from rawtrace_qc.errors import (
     ArtifactValidationError,
+    ExtractionError,
     ThermoHelperCommandError,
     ThermoHelperLicenseError,
     ThermoHelperNotFoundError,
@@ -148,7 +149,7 @@ class TestThermoExtractorUnit:
         assert not locator_called
         assert not runner_called
 
-    def test_runner_failure_cleans_up_and_attaches_output(
+    def test_unreadable_file_cleans_up_and_reports_the_helper_reason(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
@@ -168,18 +169,38 @@ class TestThermoExtractorUnit:
             (temp_out / "sample.raw.ms1-trace.parquet").write_text("partial")
             raise ThermoHelperCommandError(
                 "Helper failed",
+                returncode=3,
                 stdout="diagnostic stdout",
                 stderr="diagnostic stderr",
             )
 
         monkeypatch.setattr("rawtrace_qc.extractors.thermo.run_thermo_helper", mock_failing_runner)
 
-        with pytest.raises(ThermoHelperCommandError) as error:
+        with pytest.raises(
+            ExtractionError, match="Could not read acquisition 'sample.raw'.*diagnostic stderr"
+        ) as error:
             ThermoExtractor().extract(raw_file, output_directory=output_directory)
 
-        assert "diagnostic stdout" in error.value.stdout
-        assert "diagnostic stderr" in error.value.stderr
+        assert error.value.path == raw_file.resolve()
+        assert isinstance(error.value.__cause__, ThermoHelperCommandError)
         assert not output_directory.exists() or not list(output_directory.iterdir())
+
+    def test_helper_license_failure_stays_a_helper_error(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        raw_file = tmp_path / "sample.raw"
+        raw_file.touch()
+
+        monkeypatch.setattr(
+            "rawtrace_qc.extractors.thermo.locate_thermo_helper",
+            lambda *args, **kwargs: Path("mock.exe"),
+        )
+
+        def mock_unlicensed_runner(command, **kwargs):
+            raise ThermoHelperCommandError("Helper failed", returncode=4, stdout="", stderr="not accepted")
+
+        monkeypatch.setattr("rawtrace_qc.extractors.thermo.run_thermo_helper", mock_unlicensed_runner)
+
+        with pytest.raises(ThermoHelperCommandError):
+            ThermoExtractor().extract(raw_file, output_directory=tmp_path / "output")
 
     def test_runner_success_with_invalid_output_content_is_caught_by_validation(
         self,
@@ -275,31 +296,34 @@ class TestThermoExtractorUnit:
         assert result.ms1_path.is_file()
         assert not (bruker_fixture.parent / f"{thermo_stem}.msn-trace.parquet").exists()
 
-    def test_ms1_only_acquisition_with_explicit_msn_selection_raises_runtime_error(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
+    @pytest.mark.parametrize(("level", "select_ms1"), [("MS1", True), ("MSn", False)])
+    def test_single_level_absent_from_the_file_reports_missing_data(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, level: str, select_ms1: bool
     ) -> None:
         raw_file = tmp_path / "sample.raw"
         raw_file.touch()
-        output_directory = tmp_path / "msn-only"
 
         monkeypatch.setattr(
             "rawtrace_qc.extractors.thermo.locate_thermo_helper",
             lambda *args, **kwargs: Path("mock.exe"),
         )
 
-        def mock_ms1_only_runner(command, **kwargs):
-            return subprocess.CompletedProcess(args=command, returncode=0, stdout="", stderr="")
+        def mock_missing_level_runner(command, **kwargs):
+            raise ThermoHelperCommandError(
+                "Helper failed",
+                returncode=1,
+                stdout="",
+                stderr=f"ERROR: The input file contains no {level} scans.",
+            )
 
-        monkeypatch.setattr("rawtrace_qc.extractors.thermo.run_thermo_helper", mock_ms1_only_runner)
+        monkeypatch.setattr("rawtrace_qc.extractors.thermo.run_thermo_helper", mock_missing_level_runner)
 
-        with pytest.raises(RuntimeError, match="no MSn scans"):
+        with pytest.raises(ExtractionError, match=f"no {level} data"):
             ThermoExtractor().extract(
                 raw_file,
-                output_directory=output_directory,
-                select_ms1=False,
-                select_msn=True,
+                output_directory=tmp_path / "output",
+                select_ms1=select_ms1,
+                select_msn=not select_ms1,
             )
 
     def test_existing_output_is_overwritten(

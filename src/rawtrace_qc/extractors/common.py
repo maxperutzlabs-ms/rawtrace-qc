@@ -4,6 +4,42 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from rawtrace_qc.errors import ExtractionError
+
+
+def read_error(path: Path, detail: str) -> ExtractionError:
+    """Create the shared error for an acquisition that cannot be read.
+
+    Args:
+        path: Acquisition file or folder that could not be read.
+        detail: Reason reported by the underlying reader.
+
+    Returns:
+        An error naming the acquisition and the reader's reason.
+    """
+    return ExtractionError(
+        f"Could not read acquisition {path.name!r}; it may be corrupt, incomplete, "
+        f"locked or inaccessible. Details: {detail}",
+        path=path,
+    )
+
+
+def missing_level_error(path: Path, level: str) -> ExtractionError:
+    """Create the shared error for a selected MS level that does not exist.
+
+    Args:
+        path: Acquisition file or folder that was read.
+        level: Display name of the missing level, for example `MS1`.
+
+    Returns:
+        An error naming the acquisition and the missing level.
+    """
+    return ExtractionError(
+        f"Acquisition {path.name!r} contains no {level} data. Select another MS "
+        "level or all levels.",
+        path=path,
+    )
+
 
 def is_valid_output_name(output_name: str) -> bool:
     """Check if an output name is a non-empty file stem without path separators.

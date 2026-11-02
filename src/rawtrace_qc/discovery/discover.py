@@ -6,7 +6,7 @@ import glob
 import os
 import stat
 from collections import deque
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -16,6 +16,7 @@ from rawtrace_qc.discovery.models import (
     DiscoveryOptions,
     DiscoveryResult,
     DiscoveryScope,
+    SkippedAcquisition,
     TraversalIssue,
     TraversalTree,
 )
@@ -40,11 +41,14 @@ def discover_inputs(
     support `*`, `?`, character classes, and recursive `**`. Each matching path
     is first validated as a complete acquisition; paths that are not
     acquisitions are scanned only when they are directories. An input that
-    yields no candidates produces one `no_candidates` issue, unless it already
-    has another issue or lies below a root traversed for a different input.
-    Candidates found through multiple inputs are included once. In recursive
-    scope, supplied directories are processed ancestor-first, and nested
-    directories beneath a traversed input root are not traversed repeatedly.
+    yields no candidates produces one `no_ready_candidates` issue when
+    acquisitions were skipped and one `no_candidates` issue otherwise, unless it
+    already has another issue or lies below a root traversed for a different
+    input. A skipped acquisition is not scanned as a directory. Candidates and
+    skipped acquisitions found through multiple inputs are included once. In
+    recursive scope, supplied directories are processed ancestor-first, and
+    nested directories beneath a traversed input root are not traversed
+    repeatedly.
 
     All non-fatal input-resolution and traversal issues are returned.
 
@@ -67,7 +71,8 @@ def discover_inputs(
         registry: Validator registry. If None (default), uses Bruker and Thermo.
 
     Returns:
-        Deduplicated valid candidates and non-fatal input or traversal issues.
+        Deduplicated valid candidates, skipped acquisitions, and non-fatal input
+        or traversal issues.
 
     Raises:
         ConfigurationError: If no input paths are supplied.
@@ -134,8 +139,8 @@ def discover(
         registry: Validator registry. If None (default), uses Bruker and Thermo.
 
     Returns:
-        Valid candidates in deterministic path order and non-fatal traversal
-        issues encountered below the source directory.
+        Valid candidates and skipped acquisitions in deterministic path order
+        and non-fatal traversal issues encountered below the source directory.
 
     Raises:
         DiscoveryError: If the source cannot be used as a real directory.
@@ -145,9 +150,10 @@ def discover(
     _validate_source(source)
     tree = _traverse(source, selected.scope)
 
+    validated_candidates, validated_skips = _validate_tree(tree, selected, registry)
     candidates: list[DiscoveryCandidate] = []
     seen: set[str] = set()
-    for candidate in _validated_candidates(tree, selected, registry):
+    for candidate in validated_candidates:
         key = _path_key(candidate.path)
         if key in seen:
             continue
@@ -161,7 +167,10 @@ def discover(
             candidate.format,
         )
     )
-    return DiscoveryResult(tuple(candidates), tree.issues)
+    skipped = sorted(
+        _unique_skips(validated_skips), key=lambda skip: _path_key(skip.path)
+    )
+    return DiscoveryResult(tuple(candidates), tree.issues, tuple(skipped))
 
 
 def validate_path(
@@ -186,29 +195,7 @@ def validate_path(
         A valid acquisition candidate, or `None` when the path is not a
         supported complete acquisition.
     """
-    selected = options or DiscoveryOptions()
-    normalized_path = Path(path).expanduser().absolute()
-    try:
-        metadata = os.lstat(normalized_path)
-    except OSError:
-        return None
-    if stat.S_ISLNK(metadata.st_mode):
-        return None
-
-    if stat.S_ISREG(metadata.st_mode):
-        tree = TraversalTree(files=(normalized_path,))
-    elif stat.S_ISDIR(metadata.st_mode):
-        tree = TraversalTree(directories=(normalized_path,))
-    else:
-        return None
-
-    path_key = _path_key(normalized_path)
-    for candidate in _validated_candidates(tree, selected, registry):
-        if _path_key(candidate.path) == path_key:
-            return DiscoveryCandidate(
-                normalized_path, candidate.vendor, candidate.format
-            )
-    return None
+    return _inspect_path(path, options, registry)[0]
 
 
 @dataclass
@@ -218,7 +205,9 @@ class _PathDiscovery:
     input_path: Path
     path: Path
     validated_candidate: DiscoveryCandidate | None = None
+    validated_skip: SkippedAcquisition | None = None
     discovered_candidates: list[DiscoveryCandidate] = field(default_factory=list)
+    discovered_skips: list[SkippedAcquisition] = field(default_factory=list)
     issues: list[DiscoveryIssue] = field(default_factory=list)
     covered: bool = False
 
@@ -268,11 +257,7 @@ def _resolve_inputs(
             continue
 
         path_discoveries = [
-            _PathDiscovery(
-                input_path,
-                path,
-                validated_candidate=validate_path(path, options, registry),
-            )
+            _PathDiscovery(input_path, path, *_inspect_path(path, options, registry))
             for path in resolved_paths
         ]
         discoveries.append(_InputDiscovery(input_path, path_discoveries))
@@ -303,6 +288,7 @@ def _discover_resolved_directories(
     for path_discovery in resolved_paths:
         if (
             path_discovery.validated_candidate is not None
+            or path_discovery.validated_skip is not None
             or not path_discovery.path.is_dir()
         ):
             continue
@@ -332,6 +318,7 @@ def _discover_resolved_directories(
             for issue in discovery_result.issues
         )
         path_discovery.discovered_candidates.extend(discovery_result.candidates)
+        path_discovery.discovered_skips.extend(discovery_result.skipped)
 
 
 def _build_discovery_result(
@@ -343,10 +330,12 @@ def _build_discovery_result(
         input_discoveries: Resolved inputs with their accumulated results.
 
     Returns:
-        Candidates and issues ordered by their original input paths.
+        Candidates, issues, and skipped acquisitions ordered by their original
+        input paths.
     """
     candidates: list[DiscoveryCandidate] = []
     issues: list[DiscoveryIssue] = []
+    skips: list[SkippedAcquisition] = []
     seen: set[str] = set()
 
     for input_discovery in input_discoveries:
@@ -354,6 +343,7 @@ def _build_discovery_result(
             issues.append(input_discovery.issue)
         for path_discovery in input_discovery.resolved_paths:
             issues.extend(path_discovery.issues)
+            skips.extend(_path_skips(path_discovery))
             path_candidates = path_discovery.discovered_candidates
             if path_discovery.validated_candidate is not None:
                 path_candidates = [path_discovery.validated_candidate, *path_candidates]
@@ -367,7 +357,22 @@ def _build_discovery_result(
         if issue is not None:
             issues.append(issue)
 
-    return DiscoveryResult(tuple(candidates), tuple(issues))
+    return DiscoveryResult(
+        tuple(candidates), tuple(issues), tuple(_unique_skips(skips))
+    )
+
+
+def _path_skips(path_discovery: _PathDiscovery) -> list[SkippedAcquisition]:
+    if path_discovery.validated_skip is None:
+        return path_discovery.discovered_skips
+    return [path_discovery.validated_skip, *path_discovery.discovered_skips]
+
+
+def _unique_skips(skips: Iterable[SkippedAcquisition]) -> list[SkippedAcquisition]:
+    unique: dict[str, SkippedAcquisition] = {}
+    for skip in skips:
+        unique.setdefault(_path_key(skip.path), skip)
+    return list(unique.values())
 
 
 def _no_candidates_issue(input_discovery: _InputDiscovery) -> DiscoveryIssue | None:
@@ -379,6 +384,19 @@ def _no_candidates_issue(input_discovery: _InputDiscovery) -> DiscoveryIssue | N
         for path_discovery in input_discovery.resolved_paths
     ):
         return None
+    skip_count = len(
+        _unique_skips(
+            skip
+            for path_discovery in input_discovery.resolved_paths
+            for skip in _path_skips(path_discovery)
+        )
+    )
+    if skip_count:
+        return DiscoveryIssue(
+            input_discovery.path,
+            f"No acquisitions are ready; {skip_count} skipped.",
+            code="no_ready_candidates",
+        )
     return DiscoveryIssue(
         input_discovery.path,
         "No supported complete acquisitions were found.",
@@ -386,30 +404,73 @@ def _no_candidates_issue(input_discovery: _InputDiscovery) -> DiscoveryIssue | N
     )
 
 
-def _validated_candidates(
+def _inspect_path(
+    path: Path,
+    options: DiscoveryOptions | None,
+    registry: DiscoveryRegistry | None,
+) -> tuple[DiscoveryCandidate | None, SkippedAcquisition | None]:
+    """Validate one path and keep the reason when it is skipped.
+
+    Args:
+        path: File or directory to validate.
+        options: Discovery configuration, or `None` for the defaults.
+        registry: Validator registry, or `None` for the built-in registry.
+
+    Returns:
+        The candidate for an accepted path, the skipped entry for a recognized
+        but rejected path, or neither for an unsupported path. A candidate takes
+        precedence when validators disagree.
+    """
+    selected = options or DiscoveryOptions()
+    normalized_path = Path(path).expanduser().absolute()
+    try:
+        metadata = os.lstat(normalized_path)
+    except OSError:
+        return None, None
+    if stat.S_ISLNK(metadata.st_mode):
+        return None, None
+
+    if stat.S_ISREG(metadata.st_mode):
+        tree = TraversalTree(files=(normalized_path,))
+    elif stat.S_ISDIR(metadata.st_mode):
+        tree = TraversalTree(directories=(normalized_path,))
+    else:
+        return None, None
+
+    candidates, skips = _validate_tree(tree, selected, registry)
+    if candidates:
+        return candidates[0], None
+    return None, skips[0] if skips else None
+
+
+def _validate_tree(
     tree: TraversalTree,
     options: DiscoveryOptions,
     registry: DiscoveryRegistry | None,
-) -> Iterator[DiscoveryCandidate]:
-    """Yield candidates returned by the selected validators.
+) -> tuple[list[DiscoveryCandidate], list[SkippedAcquisition]]:
+    """Run the selected validators over a traversal tree.
 
     Args:
         tree: Files and directories supplied to each validator.
         options: Vendor filter and validation thresholds.
         registry: Validator registry, or `None` for the built-in registry.
 
-    Yields:
-        Candidates accepted by the selected validators.
+    Returns:
+        Candidates accepted and acquisitions skipped by the selected validators.
     """
     active_registry = registry or _default_registry()
     now = options.clock()
+    candidates: list[DiscoveryCandidate] = []
+    skips: list[SkippedAcquisition] = []
     for vendor, format, validator in active_registry:
         if options.vendors is not None and vendor not in options.vendors:
             continue
-        for path in validator(
-            tree, options.min_size_bytes, options.min_age_seconds, now
-        ):
-            yield DiscoveryCandidate(path, vendor, format)
+        result = validator(tree, options.min_size_bytes, options.min_age_seconds, now)
+        candidates.extend(
+            DiscoveryCandidate(path, vendor, format) for path in result.valid
+        )
+        skips.extend(result.skipped)
+    return candidates, skips
 
 
 def _default_registry() -> DiscoveryRegistry:

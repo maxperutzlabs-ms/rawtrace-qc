@@ -46,6 +46,32 @@ class TraversalTree:
     issues: tuple[TraversalIssue, ...] = ()
 
 
+class SkipReason(StrEnum):
+    """Explain why a recognized acquisition is not a candidate."""
+
+    TOO_SMALL = "too_small"
+    TOO_RECENT = "too_recent"
+    INCOMPLETE = "incomplete"
+    INACCESSIBLE = "inaccessible"
+
+
+@dataclass(frozen=True, slots=True)
+class SkippedAcquisition:
+    """Describe a recognized acquisition that discovery did not accept."""
+
+    path: Path
+    reason: SkipReason
+    message: str
+
+
+@dataclass(frozen=True, slots=True)
+class ValidationResult:
+    """Return the paths a vendor validator accepted and skipped."""
+
+    valid: tuple[Path, ...] = ()
+    skipped: tuple[SkippedAcquisition, ...] = ()
+
+
 @dataclass(frozen=True, slots=True)
 class DiscoveryCandidate:
     """Describe a valid acquisition identified by a vendor detector."""
@@ -57,10 +83,11 @@ class DiscoveryCandidate:
 
 @dataclass(frozen=True, slots=True)
 class DiscoveryResult:
-    """Return valid candidates together with non-fatal discovery issues."""
+    """Return valid candidates, non-fatal issues, and skipped acquisitions."""
 
     candidates: tuple[DiscoveryCandidate, ...] = ()
     issues: tuple[DiscoveryIssue, ...] = ()
+    skipped: tuple[SkippedAcquisition, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

@@ -36,19 +36,20 @@ The public services currently include `rawtrace_qc.discovery.discover`, `rawtrac
 
 Use `discover()` to find valid raw acquisitions below a source directory. By default it examines direct children, uses the built-in Thermo and Bruker validators, requires files to be at least 1 MiB, and requires the relevant recording data to be at least 2 minutes old.
 
-Use `discover_inputs()` when inputs may be individual files, directories, or glob patterns. Patterns support `*`, `?`, character classes such as `[ab]`, and recursive `**`. Unmatched patterns, nonexistent literal paths, and inputs that yield no candidates are returned as `DiscoveryResult.issues`; path resolution does not validate acquisition formats. `**` expansion is recursive regardless of `DiscoveryOptions.scope`. The scope controls traversal inside concrete directories that are not already valid acquisitions, and a directly validated acquisition is never traversed.
+Use `discover_inputs()` when inputs may be individual files, directories, or glob patterns. Patterns support `*`, `?`, character classes such as `[ab]`, and recursive `**`. Unmatched patterns, nonexistent literal paths, and inputs that yield no candidates are returned as `DiscoveryResult.issues`; path resolution does not validate acquisition formats. An input with no candidates gets a `no_ready_candidates` issue when it contains skipped acquisitions and a `no_candidates` issue otherwise, so a folder where only some acquisitions were skipped has no issue. A skipped acquisition is not scanned as a directory. `**` expansion is recursive regardless of `DiscoveryOptions.scope`. The scope controls traversal inside concrete directories that are not already valid acquisitions, and a directly validated acquisition is never traversed.
 
 Set `DiscoveryScope.RECURSIVE` to inspect descendants. Recursive traversal does not follow symlinks. A directory ending in `.d` that contains a regular `.tdf` or `.tdf_bin` file is treated as a possible Bruker acquisition and is not traversed further. This prevents files inside an acquisition from being reported as separate acquisitions.
 
 The result contains valid candidates and traversal issues:
 
 - `DiscoveryResult.candidates` contains only complete acquisitions.
+- `DiscoveryResult.skipped` contains recognized acquisitions that were not accepted, each with a `SkipReason` and a message. The reasons are the same for every vendor: `too_recent`, `too_small`, `incomplete` (a Bruker folder missing a required member), and `inaccessible`. Other file types and `.d` folders without any `.tdf` or `.tdf_bin` member are not acquisitions and are not reported.
 - `DiscoveryResult.issues` contains non-fatal problems encountered below the source directory.
 - An invalid, inaccessible, symlinked, or non-directory source raises `DiscoveryError`.
 
-Thermo candidates must be non-empty regular files with a case-insensitive `.raw` suffix. Bruker candidates must be directories with a case-insensitive `.d` suffix containing at least one non-empty `.tdf` file and one non-empty, sufficiently old `.tdf_bin` file. Bruker member basenames are arbitrary.
+Thermo candidates must be regular files with a case-insensitive `.raw` suffix that meet the size and age thresholds. Bruker candidates must be directories with a case-insensitive `.d` suffix containing at least one non-empty `.tdf` file and one `.tdf_bin` file that meets the thresholds. Setting a threshold to `0` disables that check, so an empty Thermo file then fails during extraction, while a Bruker folder with an empty `.tdf_bin` still extracts from its `.tdf` database. Symlinked acquisitions are not supported and are ignored. Bruker member basenames are arbitrary.
 
-The thresholds and clock are configurable through `DiscoveryOptions`. Additional vendors can be added by registering a validator on `DiscoveryRegistry`. A validator receives the traversed files and directories, the configured thresholds, and the current Unix timestamp. It returns only paths that are valid for that vendor.
+The thresholds and clock are configurable through `DiscoveryOptions`. Additional vendors can be added by registering a validator on `DiscoveryRegistry`. A validator receives the traversed files and directories, the configured thresholds, and the current Unix timestamp. It returns a `ValidationResult` with the valid paths and the skipped acquisitions for that vendor.
 
 ### Input Pattern Example
 
@@ -101,6 +102,10 @@ For a single file or acquisition folder supplied by a file dialog or drag and dr
 Both `select_ms1` and `select_msn` default to `True`. This writes every available level: an MS1 artifact is written when MS1 rows exist, and an MSn artifact is written only when MSn rows exist. Selecting only one level writes only that level. Selecting a level that does not exist raises an error, except that an all-level request omits unavailable levels. A database with an empty `Frames` table raises an error because it indicates a broken acquisition. When both flags are `False`, the input is structurally checked and no output is created.
 
 Bruker MSn rows have `row_granularity` set to `frame-aggregate`. A frame can contain multiple precursor isolation events, so these rows must not be interpreted as individual precursor spectra.
+
+### Extraction Errors
+
+Both extractors report acquisition problems as `ExtractionError`, whose `path` attribute names the acquisition. A file that cannot be read gives `Could not read acquisition 'x'; it may be corrupt, incomplete, locked or inaccessible. Details: ...`, where the details come from the underlying reader. A single-level selection without data of that level gives `Acquisition 'x' contains no MS1 data.` (or `MSn`). A Thermo helper that cannot run or reports a license problem remains a `ThermoHelperError` because it concerns the machine rather than the file, and invalid helper output remains an `ArtifactValidationError`.
 
 ### Basic Extraction Example
 

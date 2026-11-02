@@ -13,7 +13,11 @@ from typing import Literal
 import numpy as np
 import pyarrow as pa
 
-from rawtrace_qc.extractors.common import validate_extraction_options
+from rawtrace_qc.extractors.common import (
+    missing_level_error,
+    read_error,
+    validate_extraction_options,
+)
 from rawtrace_qc.models import ExtractionResult
 from rawtrace_qc.traces import write_trace
 
@@ -82,11 +86,10 @@ class BrukerExtractor:
             None after basic input validation.
 
         Raises:
-            FileNotFoundError: If `analysis.tdf` is missing.
             ValueError: If an argument or input path is invalid.
-            RuntimeError: If `Frames` is empty, a single-level selection has no
-                frames of that level, or required frame data cannot form a valid
-                table.
+            ExtractionError: If `analysis.tdf` cannot be read, contains no frames
+                or invalid frame data, or a single-level selection has no frames
+                of that level.
         """
         resolved_input = validate_extraction_options(
             input_path,
@@ -98,17 +101,20 @@ class BrukerExtractor:
         )
         tdf_path = resolved_input / "analysis.tdf"
         if not tdf_path.is_file():
-            raise FileNotFoundError(f"analysis.tdf not found in {resolved_input}")
+            raise read_error(resolved_input, "analysis.tdf was not found.")
 
-        acquisition_start_time = self._read_acquisition_start_time(tdf_path)
-        source_id = self._read_analysis_id(tdf_path)
-        frames = self._read_frames(tdf_path)
-        if not frames.scan_id.size:
-            raise RuntimeError("Frames contains no rows.")
-        summary = self._build_summary(
-            frames,
-            self._read_dia_ms2_ids(tdf_path),
-        )
+        try:
+            acquisition_start_time = self._read_acquisition_start_time(tdf_path)
+            source_id = self._read_analysis_id(tdf_path)
+            frames = self._read_frames(tdf_path)
+            if not frames.scan_id.size:
+                raise RuntimeError("Frames contains no rows.")
+            summary = self._build_summary(
+                frames,
+                self._read_dia_ms2_ids(tdf_path),
+            )
+        except (sqlite3.Error, RuntimeError, ValueError, TypeError) as error:
+            raise read_error(resolved_input, str(error)) from error
         if not select_ms1 and not select_msn:
             return ExtractionResult()
 
@@ -116,9 +122,9 @@ class BrukerExtractor:
         ms1_indices = np.flatnonzero(summary.ms_level == 1)
         msn_indices = np.flatnonzero(summary.ms_level > 1)
         if select_ms1 and not select_all_levels and not len(ms1_indices):
-            raise RuntimeError("The input folder contains no MS1 frames.")
+            raise missing_level_error(resolved_input, "MS1")
         if select_msn and not select_all_levels and not len(msn_indices):
-            raise RuntimeError("The input folder contains no MSn frames.")
+            raise missing_level_error(resolved_input, "MSn")
 
         destination_directory = (
             resolved_input.parent

@@ -12,6 +12,7 @@ from rawtrace_qc.discovery import (
     DiscoveryIssue,
     DiscoveryOptions,
     DiscoveryScope,
+    SkippedAcquisition,
     Vendor,
     discover_inputs,
 )
@@ -59,10 +60,11 @@ class BatchExtractionOutcome:
 
 @dataclass(frozen=True, slots=True)
 class BatchExtractionResult:
-    """Collect candidate outcomes and discovery issues for a batch."""
+    """Collect candidate outcomes, discovery issues, and discovery skips."""
 
     outcomes: tuple[BatchExtractionOutcome, ...]
     discovery_issues: tuple[DiscoveryIssue, ...]
+    discovery_skips: tuple[SkippedAcquisition, ...] = ()
 
     @property
     def exit_code(self) -> int:
@@ -106,7 +108,8 @@ def extract_batch(
             is controlled by `recursive`.
 
     Returns:
-        Candidate outcomes and separate input-classification or traversal issues.
+        Candidate outcomes, separate input-classification or traversal issues,
+        and acquisitions skipped by discovery.
 
     Raises:
         ConfigurationError: If no input paths are supplied.
@@ -163,7 +166,9 @@ def extract_batch(
                 )
             )
 
-    return BatchExtractionResult(tuple(outcomes), discovery_result.issues)
+    return BatchExtractionResult(
+        tuple(outcomes), discovery_result.issues, discovery_result.skipped
+    )
 
 
 def _get_extractor(

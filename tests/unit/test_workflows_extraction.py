@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 import pytest
-from rawtrace_qc.discovery import DiscoveryIssue, DiscoveryOptions, Vendor
+from rawtrace_qc.discovery import DiscoveryIssue, DiscoveryOptions, SkipReason, Vendor
 from rawtrace_qc.errors import ThermoHelperNotFoundError
 from rawtrace_qc.models import ExtractionResult
 from rawtrace_qc.thermo import ThermoHelperState, ThermoHelperStatus
@@ -235,6 +235,15 @@ class TestExtractBatch:
         assert result.exit_code == 1
         assert result.discovery_issues[0].path == source
         assert "No supported" in result.discovery_issues[0].message
+
+    def test_skipped_named_file_is_returned_with_its_reason(self, tmp_path: Path) -> None:
+        raw = _create_raw(tmp_path / "small.raw")
+
+        result = extract_batch([raw], discovery_options=DiscoveryOptions(min_size_bytes=1024, min_age_seconds=0))
+
+        assert result.outcomes == ()
+        assert [skip.reason for skip in result.discovery_skips] == [SkipReason.TOO_SMALL]
+        assert result.exit_code == 1
 
 
 class TestBatchExtractionResult:

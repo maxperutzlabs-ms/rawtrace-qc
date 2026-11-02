@@ -14,8 +14,11 @@ from rawtrace_qc.discovery.models import (
     DiscoveryOptions,
     DiscoveryResult,
     DiscoveryScope,
+    SkippedAcquisition,
+    SkipReason,
     TraversalIssue,
     TraversalTree,
+    ValidationResult,
 )
 from rawtrace_qc.discovery.policies import (
     FileFormat,
@@ -33,8 +36,11 @@ __all__ = [
     "DiscoveryResult",
     "DiscoveryScope",
     "FileFormat",
+    "SkipReason",
+    "SkippedAcquisition",
     "TraversalIssue",
     "TraversalTree",
+    "ValidationResult",
     "Vendor",
     "discover",
     "discover_inputs",

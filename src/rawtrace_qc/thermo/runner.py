@@ -135,6 +135,7 @@ def run_thermo_helper(
         raise ThermoHelperCommandError(
             f"ThermoScanHeaderExtractor command {command_arguments!r} exited "
             f"with status {result.returncode}.",
+            returncode=result.returncode,
             stdout=_decode_output(result.stdout, errors="backslashreplace"),
             stderr=_decode_output(result.stderr, errors="backslashreplace"),
         )

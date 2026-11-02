@@ -16,8 +16,10 @@ from rawtrace_qc.discovery import (
     DiscoveryResult,
     DiscoveryScope,
     FileFormat,
+    SkipReason,
     TraversalIssue,
     TraversalTree,
+    ValidationResult,
     Vendor,
     discover,
     discover_inputs,
@@ -37,10 +39,10 @@ def _write_file(path: Path, size: int, modified_at: float = NOW - 601) -> Path:
     return path
 
 
-def _write_bruker(path: Path, size: int = 8) -> Path:
+def _write_bruker(path: Path, size: int = 8, modified_at: float = NOW - 601) -> Path:
     path.mkdir()
     _write_file(path / "metadata.TDF", 1)
-    _write_file(path / "binary.TDF_BIN", size)
+    _write_file(path / "binary.TDF_BIN", size, modified_at)
     return path
 
 
@@ -55,9 +57,9 @@ def _options(**kwargs: object) -> DiscoveryOptions:
     return DiscoveryOptions(**values)  # type: ignore[arg-type]
 
 
-def _future_validator(tree: TraversalTree, min_size_bytes: int, min_age_seconds: float, now: float) -> tuple[Path, ...]:
+def _future_validator(tree: TraversalTree, min_size_bytes: int, min_age_seconds: float, now: float) -> ValidationResult:
     del min_size_bytes, min_age_seconds, now
-    return tree.files
+    return ValidationResult(tree.files)
 
 
 class TestDiscoveryModels:
@@ -115,30 +117,35 @@ class TestVendorValidators:
         valid = _write_file(tmp_path / "sample.RAW", 1, NOW - 600)
         tree = TraversalTree(files=(valid,))
 
-        assert validate_thermo(tree, 1, 600, NOW) == (valid,)
+        assert validate_thermo(tree, 1, 600, NOW).valid == (valid,)
 
-    def test_validate_thermo_omits_small_and_recent_files(self, tmp_path: Path) -> None:
-        small = _write_file(tmp_path / "small.raw", 0)
-        recent = _write_file(tmp_path / "recent.raw", 1, NOW - 599)
-        tree = TraversalTree(files=(small, recent))
+    def test_validators_report_the_same_reasons_for_small_and_recent_acquisitions(self, tmp_path: Path) -> None:
+        small_raw = _write_file(tmp_path / "small.raw", 0)
+        recent_raw = _write_file(tmp_path / "recent.raw", 1, NOW - 599)
+        small_bruker = _write_bruker(tmp_path / "small.d", size=0)
+        recent_bruker = _write_bruker(tmp_path / "recent.d", modified_at=NOW - 599)
 
-        assert validate_thermo(tree, 1, 600, NOW) == ()
+        thermo = validate_thermo(TraversalTree(files=(small_raw, recent_raw)), 1, 600, NOW)
+        bruker = validate_bruker(TraversalTree(directories=(small_bruker, recent_bruker)), 1, 600, NOW)
 
-    def test_validators_always_omit_empty_files_when_minimum_size_is_zero(self, tmp_path: Path) -> None:
-        thermo = _write_file(tmp_path / "empty.raw", 0)
-        bruker = tmp_path / "empty.d"
-        bruker.mkdir()
-        _write_file(bruker / "metadata.tdf", 1)
-        _write_file(bruker / "binary.tdf_bin", 0)
+        assert thermo.valid == bruker.valid == ()
+        expected = [SkipReason.TOO_SMALL, SkipReason.TOO_RECENT]
+        assert [skip.reason for skip in thermo.skipped] == [skip.reason for skip in bruker.skipped] == expected
+        assert [skip.message for skip in thermo.skipped] == [skip.message for skip in bruker.skipped]
+        assert thermo.skipped[1].message == "Modified 9 min ago (minimum 10 min)."
 
-        assert validate_thermo(TraversalTree(files=(thermo,)), 0, 600, NOW) == ()
-        assert validate_bruker(TraversalTree(directories=(bruker,)), 0, 600, NOW) == ()
+    def test_zero_thresholds_disable_the_size_and_age_checks(self, tmp_path: Path) -> None:
+        empty_raw = _write_file(tmp_path / "empty.raw", 0, NOW + 60)
+        empty_bin = _write_bruker(tmp_path / "empty.d", size=0, modified_at=NOW + 60)
+
+        assert validate_thermo(TraversalTree(files=(empty_raw,)), 0, 0, NOW).valid == (empty_raw,)
+        assert validate_bruker(TraversalTree(directories=(empty_bin,)), 0, 0, NOW).valid == (empty_bin,)
 
     def test_validate_bruker_accepts_arbitrary_case_insensitive_member_names(self, tmp_path: Path) -> None:
         valid = _write_bruker(tmp_path / "run.D")
         tree = TraversalTree(directories=(valid,))
 
-        assert validate_bruker(tree, 1, 600, NOW) == (valid,)
+        assert validate_bruker(tree, 1, 600, NOW).valid == (valid,)
 
     def test_validate_bruker_requires_nonempty_tdf_and_complete_tdf_bin(self, tmp_path: Path) -> None:
         missing_tdf = tmp_path / "missing_tdf.d"
@@ -148,9 +155,17 @@ class TestVendorValidators:
         empty_tdf.mkdir()
         _write_file(empty_tdf / "metadata.tdf", 0)
         _write_file(empty_tdf / "binary.tdf_bin", 1)
-        tree = TraversalTree(directories=(missing_tdf, empty_tdf))
+        unrelated = tmp_path / "conf.d"
+        unrelated.mkdir()
+        tree = TraversalTree(directories=(missing_tdf, empty_tdf, unrelated))
 
-        assert validate_bruker(tree, 1, 600, NOW) == ()
+        result = validate_bruker(tree, 1, 600, NOW)
+
+        assert result.valid == ()
+        assert [(skip.path, skip.reason) for skip in result.skipped] == [
+            (missing_tdf, SkipReason.INCOMPLETE),
+            (empty_tdf, SkipReason.INCOMPLETE),
+        ]
 
 
 class TestDiscover:
@@ -350,6 +365,30 @@ class TestDiscoverInputs:
         assert result.issues[0].path == unsupported_file
         assert result.issues[0].code == "no_candidates"
         assert "not a directory" not in result.issues[0].message
+
+    def test_partly_skipped_folder_reports_the_skip_without_an_issue(self, tmp_path: Path) -> None:
+        valid = _write_file(tmp_path / "sample.raw", 1)
+        recent = _write_file(tmp_path / "recent.raw", 1, NOW)
+
+        result = discover_inputs((tmp_path,), _options())
+
+        assert [candidate.path for candidate in result.candidates] == [valid]
+        assert [skip.path for skip in result.skipped] == [recent]
+        assert result.issues == ()
+
+    def test_input_with_only_skips_gets_an_issue_and_a_skipped_bruker_folder_is_not_scanned(
+        self, tmp_path: Path
+    ) -> None:
+        incomplete = tmp_path / "run.d"
+        incomplete.mkdir()
+        _write_file(incomplete / "binary.tdf_bin", 1)
+        _write_file(incomplete / "nested.raw", 1)
+
+        result = discover_inputs((incomplete,), _options())
+
+        assert result.candidates == ()
+        assert [(skip.path, skip.reason) for skip in result.skipped] == [(incomplete, SkipReason.INCOMPLETE)]
+        assert [(issue.path, issue.code) for issue in result.issues] == [(incomplete, "no_ready_candidates")]
 
     def test_reports_unmatched_glob_pattern(self, tmp_path: Path) -> None:
         pattern = tmp_path / "*.raw"

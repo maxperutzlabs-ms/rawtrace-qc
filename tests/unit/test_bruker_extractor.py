@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pyarrow as pa
 import pytest
+from rawtrace_qc.errors import ExtractionError
 from rawtrace_qc.extractors import BrukerExtractor
 from rawtrace_qc.traces import load_trace
 
@@ -61,7 +62,7 @@ class TestBrukerExtractor:
             connection.executemany("INSERT INTO Frames VALUES (?, ?, ?)", [(1, 1.0, 0), (1, 2.0, 0)])
             connection.commit()
 
-        with pytest.raises(RuntimeError, match="duplicate scan_id"):
+        with pytest.raises(ExtractionError, match="duplicate scan_id"):
             BrukerExtractor().extract(bruker_fixture, output_directory=tmp_path / "duplicate", select_msn=False)
 
     @pytest.mark.parametrize(
@@ -113,7 +114,7 @@ class TestBrukerExtractor:
             connection.execute("DELETE FROM DiaFrameMsMsInfo")
             connection.commit()
 
-        with pytest.raises(RuntimeError, match="no MSn frames"):
+        with pytest.raises(ExtractionError, match="no MSn data"):
             BrukerExtractor().extract(
                 bruker_fixture, output_directory=tmp_path / "msn-only", select_ms1=False, select_msn=True
             )
@@ -127,7 +128,7 @@ class TestBrukerExtractor:
 
         assert result.ms1_path is None
         assert result.msn_path is not None
-        with pytest.raises(RuntimeError, match="no MS1 frames"):
+        with pytest.raises(ExtractionError, match="no MS1 data"):
             BrukerExtractor().extract(bruker_fixture, output_directory=tmp_path / "ms1", select_msn=False)
 
     def test_empty_frames_table_is_rejected(self, bruker_fixture: Path, tmp_path: Path) -> None:
@@ -135,7 +136,7 @@ class TestBrukerExtractor:
             connection.execute("DELETE FROM Frames")
             connection.commit()
 
-        with pytest.raises(RuntimeError, match="no rows"):
+        with pytest.raises(ExtractionError, match="no rows"):
             BrukerExtractor().extract(bruker_fixture, output_directory=tmp_path / "empty")
 
     def test_high_precision_writes_float64_trace_columns(self, bruker_fixture: Path, tmp_path: Path) -> None:
@@ -171,5 +172,13 @@ class TestBrukerExtractor:
             connection.execute("CREATE TABLE Frames (Id INTEGER, Time REAL)")
             connection.commit()
 
-        with pytest.raises(RuntimeError, match="Frames is missing"):
+        with pytest.raises(ExtractionError, match="Frames is missing"):
             BrukerExtractor().extract(bruker_fixture, output_directory=tmp_path / "invalid", select_msn=False)
+
+    def test_corrupt_database_is_reported_with_the_acquisition_name(self, bruker_fixture: Path, tmp_path: Path) -> None:
+        (bruker_fixture / "analysis.tdf").write_bytes(b"not a database, just some corrupt bytes" * 50)
+
+        with pytest.raises(ExtractionError, match="Could not read acquisition 'sample.d'.*not a database") as error:
+            BrukerExtractor().extract(bruker_fixture, output_directory=tmp_path / "corrupt")
+
+        assert error.value.path == bruker_fixture

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 
 class RawtraceError(Exception):
     """Base class for expected rawtrace-qc errors."""
@@ -27,6 +29,14 @@ class ReportError(RawtraceError):
     """Raise when report data or HTML cannot be created."""
 
 
+class ExtractionError(RawtraceError):
+    """Raise when one acquisition cannot be read or lacks the requested data."""
+
+    def __init__(self, message: str, *, path: Path) -> None:
+        self.path = path
+        super().__init__(message)
+
+
 class ThermoHelperError(RawtraceError):
     """Base class for ThermoScanHeaderExtractor helper errors."""
 
@@ -44,6 +54,12 @@ class ThermoHelperExecutionError(ThermoHelperError):
 
 class ThermoHelperCommandError(ThermoHelperExecutionError):
     """Raise when the Thermo helper exits with a non-zero status."""
+
+    def __init__(
+        self, message: str, *, returncode: int, stdout: str, stderr: str
+    ) -> None:
+        self.returncode = returncode
+        super().__init__(message, stdout=stdout, stderr=stderr)
 
 
 class ThermoHelperTimeoutError(ThermoHelperExecutionError):
