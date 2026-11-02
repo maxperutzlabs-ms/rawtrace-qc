@@ -40,8 +40,10 @@ def install_thermo_helper(
 
     Both sources are copied or downloaded to a temporary file, verified against
     the pinned SHA-256 digest, and safely extracted into a temporary directory
-    before the complete helper directory is atomically published. Installation
-    never executes the helper or changes its Thermo license marker.
+    before the complete helper directory is atomically published. A versioned
+    install directory without the helper executable counts as not installed and
+    is replaced. Installation never executes the helper or changes its Thermo
+    license marker.
 
     Args:
         archive_path: Local ZIP archive to install. If None (default), download
@@ -63,7 +65,8 @@ def install_thermo_helper(
         ThermoHelperArchiveError: If the source is not a safe ZIP containing
             the expected executable.
         ThermoHelperInstallConflictError: If the versioned install directory
-            already contains a different or unmanaged installation.
+            already contains a helper executable from a different or unmanaged
+            installation.
         ThermoHelperInstallationError: If staging or atomic publication fails.
     """
     if specification is None:
@@ -75,7 +78,11 @@ def install_thermo_helper(
     install_parent = runtime_directory.parent.resolve()
     install_directory = install_parent / runtime_directory.name
 
-    if archive_path is None and _path_exists(install_directory):
+    if (
+        archive_path is None
+        and _path_exists(install_directory)
+        and not _is_missing_executable(install_directory, specification)
+    ):
         return _existing_install_executable(install_directory, specification)
 
     try:
@@ -103,13 +110,21 @@ def install_thermo_helper(
             payload_directory = staged_executable.parent
             _write_install_manifest(payload_directory, specification)
 
-            if _path_exists(install_directory):
+            replace_existing = _path_exists(install_directory)
+            if replace_existing and not _is_missing_executable(
+                install_directory, specification
+            ):
                 return _existing_install_executable(install_directory, specification)
 
             try:
+                if replace_existing:
+                    # The staging directory's cleanup removes the moved folder.
+                    install_directory.rename(temporary_directory / "replaced")
                 _publish_install(payload_directory, install_directory)
             except OSError as error:
-                if _path_exists(install_directory):
+                if _path_exists(install_directory) and not _is_missing_executable(
+                    install_directory, specification
+                ):
                     return _existing_install_executable(
                         install_directory, specification
                     )
@@ -565,6 +580,17 @@ def _existing_install_executable(
             "or incomplete installation."
         )
     return executable_path
+
+
+def _is_missing_executable(
+    install_directory: Path,
+    specification: ThermoHelperSpecification,
+) -> bool:
+    return (
+        install_directory.is_dir()
+        and not install_directory.is_symlink()
+        and not _path_exists(install_directory / specification.executable_name)
+    )
 
 
 def _publish_install(payload_directory: Path, install_directory: Path) -> None:

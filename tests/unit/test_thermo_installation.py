@@ -268,6 +268,73 @@ class TestInstallThermoHelper:
 
         assert executable.read_bytes() == b"MZmock-helper"
 
+    def test_replaces_install_directory_without_executable_from_local_archive(self, tmp_path: Path) -> None:
+        archive_path, specification = _create_archive(tmp_path)
+        data_directory = tmp_path / "appdata"
+        executable = install_thermo_helper(archive_path, data_directory=data_directory, specification=specification)
+        executable.unlink()
+        (executable.parent / "leftover.txt").write_text("stale", encoding="utf-8")
+
+        reinstalled = install_thermo_helper(archive_path, data_directory=data_directory, specification=specification)
+
+        assert reinstalled.read_bytes() == b"MZmock-helper"
+        assert not (reinstalled.parent / "leftover.txt").exists()
+        _assert_no_staging_directories(data_directory, specification)
+
+    def test_replaces_empty_install_directory_from_download(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        archive_path, specification = _create_archive(tmp_path)
+        data_directory = tmp_path / "appdata"
+        managed_directory = _managed_directory(data_directory, specification)
+        managed_directory.mkdir(parents=True)
+
+        def copy_download(destination: Path, *, specification: ThermoHelperSpecification, timeout: float) -> Path:
+            shutil.copyfile(archive_path, destination)
+            return destination
+
+        monkeypatch.setattr(installation_module, "download_thermo_helper_archive", copy_download)
+
+        executable = install_thermo_helper(data_directory=data_directory, specification=specification)
+
+        assert executable.read_bytes() == b"MZmock-helper"
+        _assert_no_staging_directories(data_directory, specification)
+
+    def test_refuses_install_location_that_is_a_file(self, tmp_path: Path) -> None:
+        archive_path, specification = _create_archive(tmp_path)
+        data_directory = tmp_path / "appdata"
+        managed_directory = _managed_directory(data_directory, specification)
+        managed_directory.parent.mkdir(parents=True)
+        managed_directory.write_text("not a directory", encoding="utf-8")
+
+        with pytest.raises(ThermoHelperInstallConflictError, match="not a regular installation directory"):
+            install_thermo_helper(archive_path, data_directory=data_directory, specification=specification)
+
+        assert managed_directory.read_text(encoding="utf-8") == "not a directory"
+
+    def test_reports_installation_error_when_incomplete_directory_cannot_be_moved(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        archive_path, specification = _create_archive(tmp_path)
+        data_directory = tmp_path / "appdata"
+        managed_directory = _managed_directory(data_directory, specification)
+        managed_directory.mkdir(parents=True)
+        original_rename = Path.rename
+
+        def fail_rename_of_managed_directory(self: Path, target: Path) -> Path:
+            if self == managed_directory.resolve():
+                raise PermissionError("in use")
+            return original_rename(self, target)
+
+        monkeypatch.setattr(Path, "rename", fail_rename_of_managed_directory)
+
+        with pytest.raises(ThermoHelperInstallationError, match="in use") as error:
+            install_thermo_helper(archive_path, data_directory=data_directory, specification=specification)
+
+        assert not isinstance(error.value, ThermoHelperInstallConflictError)
+        assert managed_directory.is_dir()
+        _assert_no_staging_directories(data_directory, specification)
+
     def test_network_failure_from_download_function_cleans_staging_state(
         self,
         tmp_path: Path,
