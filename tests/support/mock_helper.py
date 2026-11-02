@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from rawtrace_qc.thermo.specification import THERMO_HELPER_RELEASE, resolve_thermo_helper_specification
+from rawtrace_qc.thermo.specification import THERMO_HELPER_RELEASE
 
 
 @dataclass
@@ -92,19 +92,19 @@ class MockThermoHelper:
         )
 
 
-def create_mock_helper_file(directory: Path, name: str | None = None) -> Path:
+def create_mock_helper_file(
+    directory: Path, name: str = THERMO_HELPER_RELEASE.specification("win-x64").executable_name
+) -> Path:
     """Create a mock helper binary file in a directory.
 
     Args:
         directory: Destination folder.
-        name: Executable filename. If None (default), use the executable name of the
-            host-resolved helper specification.
+        name: Executable filename. Defaults to the `win-x64` executable name, regardless
+            of the host, so that creating the mock never depends on the current platform.
 
     Returns:
         The created executable path.
     """
-    if name is None:
-        name = resolve_thermo_helper_specification().executable_name
     directory.mkdir(parents=True, exist_ok=True)
     executable_path = directory / name
     executable_path.write_bytes(b"MZmock_executable_standin")
