@@ -6,8 +6,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
+from rawtrace_qc import environment
 from rawtrace_qc.errors import UnsupportedPlatformError
-from rawtrace_qc.thermo.runtime import detect_runtime, find_host_runtime
+from rawtrace_qc.thermo.runtime import find_host_runtime
 
 THERMO_HELPER_NAME = "thermoscanheaderextractor"
 
@@ -116,10 +117,17 @@ def resolve_thermo_helper_specification(
         The specification of the asset to use for the runtime.
 
     Raises:
-        UnsupportedPlatformError: If the host runtime cannot be detected or
-            neither the runtime nor its fallback has a pinned asset.
+        UnsupportedPlatformError: If the host is not recognized or neither
+            the runtime nor its fallback has a pinned asset.
     """
-    selected = detect_runtime() if runtime is None else runtime
+    selected = find_host_runtime() if runtime is None else runtime
+    if selected is None:
+        raise UnsupportedPlatformError(
+            f"ThermoScanHeaderExtractor v{release.version} is not available for "
+            f"platform {environment.get_platform()!r} and machine "
+            f"{environment.get_machine()!r}. "
+            f"Supported runtimes are {sorted(release.assets)}."
+        )
     return release.specification(_pinned_runtime(selected, release))
 
 

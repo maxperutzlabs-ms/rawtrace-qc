@@ -105,6 +105,20 @@ class TestResolveThermoHelperSpecification:
         with pytest.raises(UnsupportedPlatformError, match="'linux-x64'"):
             resolve_thermo_helper_specification()
 
+    @pytest.mark.parametrize(
+        ("platform_name", "machine"), [("freebsd13", "amd64"), ("win32", "x86"), ("linux", "riscv64")]
+    )
+    def test_raises_error_naming_host_and_supported_runtimes(
+        self, monkeypatch: pytest.MonkeyPatch, platform_name: str, machine: str
+    ) -> None:
+        monkeypatch.setattr(environment, "get_platform", lambda: platform_name)
+        monkeypatch.setattr(environment, "get_machine", lambda: machine)
+
+        with pytest.raises(
+            UnsupportedPlatformError, match=rf"{platform_name!r} and machine {machine!r}.*\['win-x64'\]"
+        ):
+            resolve_thermo_helper_specification()
+
 
 class TestIsThermoHelperSupported:
     @pytest.mark.parametrize(
