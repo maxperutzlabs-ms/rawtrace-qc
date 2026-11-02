@@ -14,7 +14,6 @@ from rawtrace_qc.discovery import DiscoveryCandidate, Vendor
 from rawtrace_qc.errors import ConfigurationError
 from rawtrace_qc.extractors import BrukerExtractor, ThermoExtractor
 from rawtrace_qc.gui.cache import TraceCache
-from rawtrace_qc.gui.config import ThermoToolSettings
 from rawtrace_qc.processing import process_traces
 from rawtrace_qc.report import ReportOptions, write_html
 from rawtrace_qc.traces import load_trace
@@ -100,7 +99,6 @@ def generate_report(
     *,
     options: ReportGenerationOptions | None = None,
     workspace: ReportWorkspace | None = None,
-    thermo_settings: ThermoToolSettings | None = None,
 ) -> ReportGenerationResult:
     """Extract active candidates and write one combined HTML report.
 
@@ -115,8 +113,6 @@ def generate_report(
             embedded-Plotly report using low precision.
         workspace: Temporary-directory owner. Required only when callers need
             temporary reports to remain available after this function returns.
-        thermo_settings: Optional Thermo helper configuration used when a
-            Thermo candidate is present.
 
     Returns:
         The generated report path, processed table count, and cache hits.
@@ -138,13 +134,7 @@ def generate_report(
         if candidate.vendor == Vendor.BRUKER:
             extractor = BrukerExtractor()
         elif candidate.vendor == Vendor.THERMO:
-            extractor = ThermoExtractor(
-                helper_path=(
-                    thermo_settings.executable_path
-                    if thermo_settings is not None
-                    else None
-                )
-            )
+            extractor = ThermoExtractor()
         else:
             raise ConfigurationError(
                 f"No GUI extractor is registered for vendor {candidate.vendor!r}."

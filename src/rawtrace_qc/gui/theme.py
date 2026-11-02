@@ -81,6 +81,7 @@ class Theme:
     header_background: str = "#063853"
     header_title: str = "#ffffff"
     header_version: str = "#B7D2DE"
+    header_attention: str = "#F5B301"
     accent: str = "#40B7B5"
     accent_hover: str = "#369c9a"
     accent_text: str = "#063853"
@@ -627,6 +628,29 @@ QPushButton#headerSettings:pressed {
     background: rgba(255, 255, 255, 0.2);
     border-color: $header_title;
 }
+QFrame#header QLabel#headerAttentionDot {
+    background: $header_attention;
+    border: 1px solid $header_background;
+    border-radius: 5px;
+}
+QLabel#thermoToolStatus {
+    background: transparent;
+    font-size: 14px;
+    font-weight: 600;
+}
+QLabel#thermoToolStatus[state="ok"] {
+    color: $count_pill_text;
+}
+QLabel#thermoToolStatus[state="problem"] {
+    color: $destructive_button_text;
+}
+QLabel#thermoToolStatus[state="pending"] {
+    color: $muted_text;
+}
+QLabel#thermoToolWaitMessage, QLabel#thermoToolReleaseLink {
+    background: transparent;
+    font-size: 14px;
+}
 QPushButton:disabled, QToolButton:disabled {
     background: $button_disabled;
     color: $text_disabled;
@@ -838,6 +862,7 @@ def apply_theme(app_or_window: Any, theme: Theme, qt_gui: Any | None = None) -> 
             "ButtonText": theme.text_primary,
             "Highlight": theme.selection_background,
             "HighlightedText": theme.selection_text,
+            "Link": theme.count_pill_text,
             "PlaceholderText": theme.placeholder_text,
             "ToolTipBase": theme.tooltip_background,
             "ToolTipText": theme.tooltip_text,

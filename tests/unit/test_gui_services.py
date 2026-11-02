@@ -9,7 +9,7 @@ from rawtrace_qc.discovery import DiscoveryCandidate, FileFormat, Vendor
 from rawtrace_qc.errors import ConfigurationError
 from rawtrace_qc.extractors import BrukerExtractor, ThermoExtractor
 from rawtrace_qc.gui.cache import CacheResult, TraceCache
-from rawtrace_qc.gui.config import GuiSettings, ThermoToolSettings, load_settings, save_settings
+from rawtrace_qc.gui.config import GuiSettings, load_settings, save_settings
 from rawtrace_qc.gui.reporting import ReportGenerationOptions, ReportStorageMode, generate_report
 from rawtrace_qc.models import ExtractionResult
 from rawtrace_qc.report import ReportAssetMode, ReportOptions
@@ -99,13 +99,12 @@ class TestReportGeneration:
         assert first.cache_hits == 0
         assert second.cache_hits == 1
 
-    def test_thermo_generation_uses_extractor_and_configured_helper_path(
+    def test_thermo_generation_uses_extractor_with_managed_helper(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         source_path = tmp_path / "sample.raw"
         source_path.touch()
         candidate = DiscoveryCandidate(source_path, Vendor.THERMO, FileFormat.RAW)
-        helper_path = tmp_path / "central" / "ThermoScanHeaderExtractor.exe"
         trace_path = tmp_path / "cache" / "sample.raw.ms1-trace.parquet"
         options = ReportGenerationOptions(
             storage_mode=ReportStorageMode.PERMANENT,
@@ -122,13 +121,10 @@ class TestReportGeneration:
         ) -> CacheResult:
             assert cached_candidate == candidate
             assert isinstance(extractor, ThermoExtractor)
+            helper_paths.append(extractor._helper_path)
             return CacheResult(ExtractionResult(ms1_path=trace_path), False)
 
         monkeypatch.setattr(cache, "extract", fake_cache_extract)
-        monkeypatch.setattr(
-            "rawtrace_qc.gui.reporting.ThermoExtractor",
-            lambda *, helper_path=None: helper_paths.append(helper_path) or ThermoExtractor(helper_path=helper_path),
-        )
         monkeypatch.setattr("rawtrace_qc.gui.reporting.load_trace", lambda _path: object())
         monkeypatch.setattr("rawtrace_qc.gui.reporting.process_traces", lambda artifacts: tuple(artifacts))
         monkeypatch.setattr(
@@ -136,13 +132,8 @@ class TestReportGeneration:
             lambda _tables, path, *, options: path,
         )
 
-        result = generate_report(
-            (candidate,),
-            cache,
-            options=options,
-            thermo_settings=ThermoToolSettings(executable_path=helper_path),
-        )
+        result = generate_report((candidate,), cache, options=options)
 
-        assert helper_paths == [helper_path]
+        assert helper_paths == [None]
         assert result.output_path == tmp_path / "reports" / "thermo.html"
         assert result.processed_table_count == 1

@@ -14,20 +14,8 @@ from rawtrace_qc.gui.patterns import FilenamePattern, PatternMode
 
 
 @dataclass(frozen=True, slots=True)
-class ThermoToolSettings:
-    """Configure an optional local ThermoScanHeaderExtractor executable."""
-
-    executable_path: Path | None = None
-
-    def __post_init__(self) -> None:
-        """Normalize the optional executable path."""
-        if self.executable_path is not None:
-            object.__setattr__(self, "executable_path", Path(self.executable_path))
-
-
-@dataclass(frozen=True, slots=True)
 class GuiSettings:
-    """Store persisted discovery, cache, report, and helper settings."""
+    """Store persisted discovery, cache, and report settings."""
 
     scope: DiscoveryScope = DiscoveryScope.DIRECT
     min_size_mb: int = 1
@@ -39,7 +27,6 @@ class GuiSettings:
     report_directory: Path = field(
         default_factory=lambda: default_data_directory() / "reports"
     )
-    thermo: ThermoToolSettings = field(default_factory=ThermoToolSettings)
     theme_mode: str = "system"
 
     def __post_init__(self) -> None:
@@ -70,10 +57,6 @@ class GuiSettings:
         if any(not isinstance(pattern, FilenamePattern) for pattern in patterns):
             raise ConfigurationError(
                 "GUI patterns must contain only FilenamePattern instances."
-            )
-        if not isinstance(self.thermo, ThermoToolSettings):
-            raise ConfigurationError(
-                "GUI thermo settings must be a ThermoToolSettings instance."
             )
         object.__setattr__(self, "scope", scope)
         object.__setattr__(self, "patterns", patterns)
@@ -165,10 +148,6 @@ def _settings_from_mapping(payload: Any) -> GuiSettings:
     )
     if len(patterns) != len(patterns_payload):
         raise TypeError("every pattern must be an object")
-    thermo_payload = payload.get("thermo", {})
-    if not isinstance(thermo_payload, dict):
-        raise TypeError("thermo must be an object")
-    executable_path = thermo_payload.get("executable_path")
     min_size_mb = discovery.get("min_size_mb")
     if min_size_mb is None and "min_size_bytes" in discovery:
         min_size_mb = int(discovery["min_size_bytes"] / (1024 * 1024))
@@ -187,9 +166,6 @@ def _settings_from_mapping(payload: Any) -> GuiSettings:
             payload.get("report_directory", default_data_directory() / "reports")
         ),
         theme_mode=payload.get("theme_mode", "system"),
-        thermo=ThermoToolSettings(
-            executable_path=Path(executable_path) if executable_path else None,
-        ),
     )
 
 
@@ -211,11 +187,4 @@ def _settings_to_mapping(settings: GuiSettings) -> dict[str, Any]:
         ],
         "report_directory": str(settings.report_directory),
         "theme_mode": settings.theme_mode,
-        "thermo": {
-            "executable_path": (
-                None
-                if settings.thermo.executable_path is None
-                else str(settings.thermo.executable_path)
-            ),
-        },
     }

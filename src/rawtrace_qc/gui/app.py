@@ -10,7 +10,7 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
-from rawtrace_qc.discovery import DiscoveryScope
+from rawtrace_qc.discovery import DiscoveryScope, Vendor
 from rawtrace_qc.environment import default_data_directory
 from rawtrace_qc.errors import (
     ConfigurationError,
@@ -35,13 +35,15 @@ from rawtrace_qc.gui.theme import (
     get_active_theme,
     resolve_theme,
 )
-from rawtrace_qc.gui.workflow import RawFileSelection
-from rawtrace_qc.thermo import (
-    THERMO_HELPER_RELEASE,
-    find_host_runtime,
-    is_thermo_helper_supported,
-    resolve_thermo_helper_specification,
+from rawtrace_qc.gui.thermo_tool import (
+    create_thermo_tool_dialog,
+    start_background_task,
+    thermo_tool_needs_attention,
+    thermo_tool_required_message,
+    thermo_tool_tooltip,
 )
+from rawtrace_qc.gui.workflow import RawFileSelection
+from rawtrace_qc.thermo import ThermoHelperStatus, get_thermo_helper_status
 
 
 def main() -> int:
@@ -60,6 +62,7 @@ def main() -> int:
     application.setOrganizationName("rawtrace-qc")
     window = create_window(qt_core, qt_gui, qt_widgets)
     window.show()
+    window.refresh_thermo_status()
     return application.exec()
 
 
@@ -372,7 +375,6 @@ def create_window(
                     cache,
                     options=self.options,
                     workspace=workspace,
-                    thermo_settings=current_settings.thermo,
                 )
             except Exception as error:
                 self.signals.failed.emit(str(error))
@@ -423,24 +425,6 @@ def create_window(
                 text_rect,
                 self.alignment() | qt_core.Qt.AlignmentFlag.AlignVCenter,
                 display_text,
-            )
-
-    class ElidedLabel(qt_widgets.QLabel):
-        """Display long labels with a trailing ellipsis and preserve the full text."""
-
-        def __init__(self, text: str, parent: Any | None = None) -> None:
-            super().__init__(text, parent)
-            self._full_text = text
-
-        def resizeEvent(self, event: Any) -> None:
-            super().resizeEvent(event)
-            metrics = qt_gui.QFontMetrics(self.font())
-            self.setText(
-                metrics.elidedText(
-                    self._full_text,
-                    qt_core.Qt.TextElideMode.ElideRight,
-                    self.contentsRect().width(),
-                )
             )
 
     class ThemedComboBox(qt_widgets.QComboBox):
@@ -548,6 +532,8 @@ def create_window(
             self._workspace = workspace
             self._cache = cache
             self._worker: Any = None
+            self._thermo_status_task: Any = None
+            self._pending_report: tuple[Any, Any] | None = None
             self._rendering_candidates = False
             self._rendering_selected = False
             self._configuration_message = configuration_message
@@ -661,6 +647,28 @@ def create_window(
             header_title_layout.setAlignment(qt_core.Qt.AlignmentFlag.AlignVCenter)
             header_layout.addLayout(header_title_layout)
             header_layout.addStretch()
+            self.thermo_tool_button = qt_widgets.QPushButton()
+            self.thermo_tool_button.setObjectName("headerSettings")
+            self.thermo_tool_button.setIcon(
+                self._action_icon("tool-icon.svg", "#ffffff", 24)
+            )
+            self.thermo_tool_button.setIconSize(qt_core.QSize(20, 20))
+            self.thermo_tool_button.setFixedSize(36, 36)
+            self.thermo_tool_button.setCursor(qt_core.Qt.CursorShape.PointingHandCursor)
+            self.thermo_tool_button.setToolTip("Thermo Tool")
+            self.thermo_tool_button.setAccessibleName("Thermo Tool")
+            self.thermo_tool_button.clicked.connect(self._open_thermo_tool)
+            self.thermo_tool_attention = qt_widgets.QLabel(self.thermo_tool_button)
+            self.thermo_tool_attention.setObjectName("headerAttentionDot")
+            self.thermo_tool_attention.setFixedSize(10, 10)
+            self.thermo_tool_attention.move(24, 2)
+            self.thermo_tool_attention.setAttribute(
+                qt_core.Qt.WidgetAttribute.WA_TransparentForMouseEvents
+            )
+            self.thermo_tool_attention.hide()
+            header_layout.addWidget(
+                self.thermo_tool_button, 0, qt_core.Qt.AlignmentFlag.AlignVCenter
+            )
             self.settings_button = qt_widgets.QPushButton()
             self.settings_button.setObjectName("headerSettings")
             self.settings_button.setIcon(self._settings_icon(qt_core, qt_gui))
@@ -870,7 +878,6 @@ def create_window(
             )
 
         def _scan_source(self) -> None:
-            nonlocal current_settings
             source_text = self.source_edit.text().strip()
             if not source_text:
                 self.discovery_status.setText("Choose a folder before scanning.")
@@ -879,7 +886,6 @@ def create_window(
                 scope = self._selected_scope()
                 self._selection.options = replace(self._selection.options, scope=scope)
                 self._settings = replace(self._settings, scope=scope)
-                current_settings = self._settings
                 result = self._selection.discover_folder(Path(source_text))
             except (DiscoveryError, OSError, ValueError) as error:
                 self._clear_candidates()
@@ -1300,6 +1306,73 @@ def create_window(
             except (ConfigurationError, ValueError) as error:
                 self.discovery_status.setText(str(error))
                 return
+            if any(candidate.vendor == Vendor.THERMO for candidate in candidates):
+                self._pending_report = (candidates, options)
+                self.generate_button.setEnabled(False)
+                self.discovery_status.setText("Checking the Thermo tool...")
+                self._worker = start_background_task(
+                    qt_core,
+                    get_thermo_helper_status,
+                    self._thermo_tool_checked,
+                    self._report_failed,
+                )
+                return
+            self._start_report(candidates, options)
+
+        def _thermo_tool_checked(self, status: ThermoHelperStatus) -> None:
+            self._worker = None
+            self._set_thermo_status(status)
+            pending_report = self._pending_report
+            self._pending_report = None
+            if status.is_ready and pending_report is not None:
+                self._start_report(*pending_report)
+                return
+            self.generate_button.setEnabled(True)
+            if status.is_ready:
+                return
+            self.discovery_status.setText(
+                "Report not generated: the Thermo tool is not ready."
+            )
+            self._prompt_thermo_tool_setup(status)
+
+        def _prompt_thermo_tool_setup(self, status: ThermoHelperStatus) -> None:
+            message = qt_widgets.QMessageBox(self)
+            message.setIcon(qt_widgets.QMessageBox.Icon.Warning)
+            message.setWindowTitle("Thermo tool required")
+            message.setText(thermo_tool_required_message(status))
+            open_button = message.addButton(
+                "Open Thermo Tool", qt_widgets.QMessageBox.ButtonRole.AcceptRole
+            )
+            message.addButton(qt_widgets.QMessageBox.StandardButton.Close)
+            message.exec()
+            if message.clickedButton() == open_button:
+                self._open_thermo_tool()
+
+        def refresh_thermo_status(self) -> None:
+            """Check the Thermo helper in the background and update the header."""
+            self._thermo_status_task = start_background_task(
+                qt_core,
+                get_thermo_helper_status,
+                self._set_thermo_status,
+                self._thermo_status_failed,
+            )
+
+        def _set_thermo_status(self, status: ThermoHelperStatus) -> None:
+            self._thermo_status_task = None
+            self.thermo_tool_button.setToolTip(thermo_tool_tooltip(status))
+            self.thermo_tool_attention.setVisible(thermo_tool_needs_attention(status))
+
+        def _thermo_status_failed(self, message: str) -> None:
+            self._thermo_status_task = None
+            self.thermo_tool_button.setToolTip(f"Thermo Tool: {message}")
+            self.thermo_tool_attention.show()
+
+        def _open_thermo_tool(self) -> None:
+            create_thermo_tool_dialog(
+                qt_core, qt_gui, qt_widgets, self, self._set_thermo_status
+            ).exec()
+
+        def _start_report(self, candidates: Any, options: Any) -> None:
             self._worker = ReportWorker(candidates, options)
             self._worker.signals.finished.connect(self._report_finished)
             self._worker.signals.failed.connect(self._report_failed)
@@ -1318,6 +1391,7 @@ def create_window(
 
         def _report_failed(self, message: str) -> None:
             self._worker = None
+            self._pending_report = None
             self.generate_button.setEnabled(True)
             self.discovery_status.setText(f"Report failed: {message}")
 
@@ -1325,7 +1399,7 @@ def create_window(
             dialog = qt_widgets.QDialog(self)
             dialog.setObjectName("settingsDialog")
             dialog.setWindowTitle("rawtrace-qc settings")
-            dialog.resize(900, 740)
+            dialog.resize(900, 560)
             layout = qt_widgets.QVBoxLayout(dialog)
             layout.setContentsMargins(20, 20, 20, 20)
             layout.setSpacing(14)
@@ -1364,7 +1438,6 @@ def create_window(
             _, appearance_form = make_card("Appearance")
             _, filters_form = make_card("File filters")
             _, storage_form = make_card("Storage")
-            _, thermo_form = make_card("Thermo helper")
 
             theme_combo = ThemedComboBox()
             theme_combo.setObjectName("themeMode")
@@ -1447,8 +1520,8 @@ def create_window(
             for path_edit in (cache_edit, report_edit):
                 path_edit.setToolTip(path_edit.text())
                 path_edit.textChanged.connect(path_edit.setToolTip)
-            cache_editor = _path_editor(cache_edit, dialog, False)
-            report_editor = _path_editor(report_edit, dialog, False)
+            cache_editor = _path_editor(cache_edit, dialog)
+            report_editor = _path_editor(report_edit, dialog)
             add_setting_row(
                 storage_form,
                 "Trace cache",
@@ -1461,45 +1534,6 @@ def create_window(
                 report_editor,
                 "Default folder for permanent reports.",
             )
-
-            pinned_version = qt_widgets.QWidget()
-            pinned_layout = qt_widgets.QHBoxLayout(pinned_version)
-            pinned_layout.setContentsMargins(0, 0, 0, 0)
-            pinned_layout.setSpacing(8)
-            version_pill = qt_widgets.QLabel(f"v{THERMO_HELPER_RELEASE.version}")
-            version_pill.setObjectName("pinnedVersion")
-            asset_label = _thermo_asset_label()
-            asset_name = ElidedLabel(asset_label)
-            asset_name.setObjectName("settingsAssetName")
-            asset_name.setToolTip(asset_label)
-            pinned_layout.addWidget(version_pill)
-            pinned_layout.addWidget(asset_name, 1)
-            add_setting_row(thermo_form, "Pinned version", pinned_version)
-
-            helper_path = ElidedLineEdit(
-                str(self._settings.thermo.executable_path or "")
-            )
-            helper_path.setObjectName("settingsPathField")
-            helper_path.setFixedHeight(40)
-            helper_path.setPlaceholderText(
-                "Optional. Leave empty to download the pinned version"
-            )
-            helper_path.setToolTip(helper_path.text())
-            helper_path.textChanged.connect(helper_path.setToolTip)
-            helper_editor = _path_editor(helper_path, dialog, True)
-            helper_field = qt_widgets.QWidget()
-            helper_field_layout = qt_widgets.QVBoxLayout(helper_field)
-            helper_field_layout.setContentsMargins(0, 0, 0, 0)
-            helper_field_layout.setSpacing(8)
-            helper_field_layout.addWidget(helper_editor)
-            helper_note = qt_widgets.QLabel(
-                "Without a local executable, the pinned version is downloaded and "
-                "its SHA-256 is verified before installation."
-            )
-            helper_note.setObjectName("settingsFieldNote")
-            helper_note.setWordWrap(True)
-            helper_field_layout.addWidget(helper_note)
-            add_setting_row(thermo_form, "Local executable", helper_field)
 
             button_row = qt_widgets.QHBoxLayout()
             button_row.setSpacing(8)
@@ -1519,7 +1553,6 @@ def create_window(
                     dialog,
                     cache_edit,
                     report_edit,
-                    helper_path,
                     size_edit,
                     age_edit,
                     theme_combo,
@@ -1530,7 +1563,6 @@ def create_window(
                 lambda: self._reset_settings_dialog(
                     cache_edit,
                     report_edit,
-                    helper_path,
                     size_edit,
                     age_edit,
                     theme_combo,
@@ -1553,8 +1585,6 @@ def create_window(
                 cache_editor.findChild(qt_widgets.QPushButton),
                 report_edit,
                 report_editor.findChild(qt_widgets.QPushButton),
-                helper_path,
-                helper_editor.findChild(qt_widgets.QPushButton),
                 reset_button,
                 cancel_button,
                 apply_button,
@@ -1569,13 +1599,12 @@ def create_window(
             dialog: Any,
             cache_edit: Any,
             report_edit: Any,
-            helper_path: Any,
             size_edit: Any,
             age_edit: Any,
             theme_combo: Any,
             persist: bool,
         ) -> None:
-            nonlocal cache, current_settings
+            nonlocal cache
             try:
                 size_text = size_edit.text().strip()
                 if not size_text:
@@ -1595,7 +1624,6 @@ def create_window(
                     patterns=tuple(self._saved_patterns),
                     cache_directory=Path(cache_edit.text()),
                     report_directory=Path(report_edit.text()),
-                    thermo=_thermo_settings(helper_path.text()),
                     theme_mode=str(theme_combo.currentData()),
                 )
                 if persist:
@@ -1604,7 +1632,6 @@ def create_window(
                 qt_widgets.QMessageBox.critical(dialog, "Invalid settings", str(error))
                 return
             self._settings = updated
-            current_settings = updated
             self._selection.options = updated.discovery_options()
             cache = TraceCache(updated.cache_directory)
             self._cache = cache
@@ -1616,7 +1643,6 @@ def create_window(
             self,
             cache_edit: Any,
             report_edit: Any,
-            helper_path: Any,
             size_edit: Any,
             age_edit: Any,
             theme_combo: Any,
@@ -1624,7 +1650,6 @@ def create_window(
             defaults = GuiSettings()
             cache_edit.setText(str(defaults.cache_directory))
             report_edit.setText(str(defaults.report_directory))
-            helper_path.clear()
             size_edit.setText(str(defaults.min_size_mb))
             age_edit.setText(str(defaults.min_age_minutes))
             theme_combo.setCurrentIndex(0)
@@ -1644,7 +1669,6 @@ def create_window(
 
     workspace = ReportWorkspace()
     cache = TraceCache(settings.cache_directory)
-    current_settings = settings
     window = MainWindow()
     return window
 
@@ -1693,8 +1717,8 @@ def _mode_selector(
     return container, group, (first, second)
 
 
-def _path_editor(line_edit: Any, dialog: Any, file_mode: bool) -> Any:
-    """Add a browse button beside one settings path field."""
+def _path_editor(line_edit: Any, dialog: Any) -> Any:
+    """Add a directory browse button beside one settings path field."""
     qt_widgets = import_module("PySide6.QtWidgets")
     container = qt_widgets.QWidget(dialog)
     layout = qt_widgets.QHBoxLayout(container)
@@ -1704,15 +1728,9 @@ def _path_editor(line_edit: Any, dialog: Any, file_mode: bool) -> Any:
     button.setFixedHeight(40)
 
     def browse() -> None:
-        start_directory = _dialog_start_directory(line_edit.text())
-        if file_mode:
-            path, _ = qt_widgets.QFileDialog.getOpenFileName(
-                dialog, "Choose executable", start_directory
-            )
-        else:
-            path = qt_widgets.QFileDialog.getExistingDirectory(
-                dialog, "Choose directory", start_directory
-            )
+        path = qt_widgets.QFileDialog.getExistingDirectory(
+            dialog, "Choose directory", _dialog_start_directory(line_edit.text())
+        )
         if path:
             line_edit.setText(path)
 
@@ -1732,18 +1750,3 @@ def _dialog_start_directory(path_text: str) -> str:
                 selected_path if selected_path.is_dir() else selected_path.parent
             )
     return str(default_data_directory())
-
-
-def _thermo_asset_label() -> str:
-    if is_thermo_helper_supported():
-        return resolve_thermo_helper_specification().asset_name
-    return f"Not supported on {find_host_runtime() or 'this system'}"
-
-
-def _thermo_settings(executable: str) -> Any:
-    """Build helper settings from the optional local executable field."""
-    from rawtrace_qc.gui.config import ThermoToolSettings
-
-    return ThermoToolSettings(
-        executable_path=Path(executable.strip()) if executable.strip() else None
-    )

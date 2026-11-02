@@ -9,7 +9,6 @@ from rawtrace_qc.discovery import DiscoveryCandidate, DiscoveryOptions, FileForm
 from rawtrace_qc.errors import ConfigurationError
 from rawtrace_qc.gui.config import (
     GuiSettings,
-    ThermoToolSettings,
     default_config_path,
     default_data_directory,
     load_settings,
@@ -56,7 +55,6 @@ def test_gui_settings_round_trip(tmp_path: Path) -> None:
         patterns=(FilenamePattern("run", r"run_\\d+"),),
         cache_directory=tmp_path / "cache",
         report_directory=tmp_path / "reports",
-        thermo=ThermoToolSettings(executable_path=tmp_path / "helper.exe"),
     )
 
     save_settings(settings, config_path)
@@ -65,6 +63,19 @@ def test_gui_settings_round_trip(tmp_path: Path) -> None:
     assert loaded == settings
     assert loaded.discovery_options().min_size_bytes == 2 * 1024 * 1024
     assert loaded.discovery_options().min_age_seconds == 12.5 * 60
+
+
+def test_gui_settings_ignore_and_drop_a_previously_saved_helper_path(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        '{"thermo": {"executable_path": "C:/tools/helper.exe"}, "theme_mode": "dark"}', encoding="utf-8"
+    )
+
+    loaded = load_settings(config_path)
+    save_settings(loaded, config_path)
+
+    assert loaded.theme_mode == "dark"
+    assert "thermo" not in config_path.read_text(encoding="utf-8")
 
 
 def test_gui_settings_loads_legacy_discovery_units(tmp_path: Path) -> None:

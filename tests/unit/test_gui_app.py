@@ -6,9 +6,8 @@ import os
 from pathlib import Path
 
 import pytest
-from rawtrace_qc import environment
 from rawtrace_qc.discovery import DiscoveryCandidate, FileFormat, Vendor
-from rawtrace_qc.gui.app import _dialog_start_directory, _load_qt, _thermo_asset_label, create_window
+from rawtrace_qc.gui.app import _dialog_start_directory, _load_qt, create_window
 from rawtrace_qc.gui.config import load_settings
 from rawtrace_qc.gui.patterns import FilenamePattern, PatternMode
 from rawtrace_qc.gui.theme import DARK_THEME, get_active_theme
@@ -109,56 +108,7 @@ def test_dialog_start_directory_uses_selected_path_or_appdata(
     assert _dialog_start_directory(str(tmp_path / "missing")) == str(appdata)
 
 
-class TestThermoAssetLabel:
-    def test_shows_asset_name_of_host_runtime(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(environment, "get_platform", lambda: "win32")
-        monkeypatch.setattr(environment, "get_machine", lambda: "ARM64")
-
-        assert _thermo_asset_label() == "ThermoScanHeaderExtractor-v0.2.0-win-x64.zip"
-
-    def test_names_unsupported_runtime(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(environment, "get_platform", lambda: "linux")
-        monkeypatch.setattr(environment, "get_machine", lambda: "x86_64")
-
-        assert _thermo_asset_label() == "Not supported on linux-x64"
-
-    def test_handles_undetectable_runtime(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(environment, "get_platform", lambda: "freebsd13")
-        monkeypatch.setattr(environment, "get_machine", lambda: "amd64")
-
-        assert _thermo_asset_label() == "Not supported on this system"
-
-
 class TestSettingsDialog:
-    def test_dialog_shows_unsupported_runtime_instead_of_asset_name(
-        self,
-        tmp_path: Path,
-        qt_application,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        monkeypatch.setattr(environment, "get_platform", lambda: "linux")
-        monkeypatch.setattr(environment, "get_machine", lambda: "x86_64")
-        qt_core, qt_gui, qt_widgets = _load_qt()
-        window = create_window(qt_core, qt_gui, qt_widgets, tmp_path / "settings.json")
-        texts: list[str] = []
-
-        def inspect_dialog() -> None:
-            dialog = next(
-                widget
-                for widget in qt_application.topLevelWidgets()
-                if isinstance(widget, qt_widgets.QDialog) and widget.isVisible()
-            )
-            label = dialog.findChild(qt_widgets.QLabel, "settingsAssetName")
-            assert label is not None
-            texts.append(label.toolTip())
-            dialog.reject()
-
-        QtCore.QTimer.singleShot(0, inspect_dialog)
-        window._open_settings()
-
-        assert texts == ["Not supported on linux-x64"]
-        window.close()
-
     def test_theme_dropdown_opens_below_when_possible_and_shows_every_option(
         self,
         tmp_path: Path,
