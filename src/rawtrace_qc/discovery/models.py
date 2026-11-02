@@ -70,7 +70,7 @@ class DiscoveryOptions:
     scope: DiscoveryScope = DiscoveryScope.DIRECT
     vendors: frozenset[str] | None = None
     min_size_bytes: int = 1024 * 1024
-    min_age_seconds: float = 600
+    min_age_seconds: float = 120
     clock: Callable[[], float] = time.time
 
     def __post_init__(self) -> None:

@@ -82,7 +82,7 @@ class TestDiscoveryModels:
 
         assert options.scope is DiscoveryScope.DIRECT
         assert options.min_size_bytes == 1024 * 1024
-        assert options.min_age_seconds == 600
+        assert options.min_age_seconds == 120
 
     @pytest.mark.parametrize("threshold", ["min_size_bytes", "min_age_seconds"])
     def test_options_reject_negative_thresholds(self, threshold: str) -> None:

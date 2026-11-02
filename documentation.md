@@ -34,7 +34,7 @@ The public services currently include `rawtrace_qc.discovery.discover`, `rawtrac
 
 ## File Discovery
 
-Use `discover()` to find valid raw acquisitions below a source directory. By default it examines direct children, uses the built-in Thermo and Bruker validators, requires files to be at least 1 MiB, and requires the relevant recording data to be at least 10 minutes old.
+Use `discover()` to find valid raw acquisitions below a source directory. By default it examines direct children, uses the built-in Thermo and Bruker validators, requires files to be at least 1 MiB, and requires the relevant recording data to be at least 2 minutes old.
 
 Use `discover_inputs()` when inputs may be individual files, directories, or glob patterns. Patterns support `*`, `?`, character classes such as `[ab]`, and recursive `**`. Unmatched patterns and nonexistent literal paths are returned as `DiscoveryResult.issues`; path resolution does not validate acquisition formats. `**` expansion is recursive regardless of `DiscoveryOptions.scope`. The scope controls traversal inside concrete directories that are not already valid acquisitions, and a directly validated acquisition is never traversed.
 

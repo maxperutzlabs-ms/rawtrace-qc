@@ -19,7 +19,7 @@ class GuiSettings:
 
     scope: DiscoveryScope = DiscoveryScope.DIRECT
     min_size_mb: int = 1
-    min_age_minutes: float = 10
+    min_age_minutes: float = 2
     patterns: tuple[FilenamePattern, ...] = ()
     cache_directory: Path = field(
         default_factory=lambda: default_data_directory() / "traces"
@@ -157,7 +157,7 @@ def _settings_from_mapping(payload: Any) -> GuiSettings:
     return GuiSettings(
         scope=discovery.get("scope", DiscoveryScope.DIRECT),
         min_size_mb=1 if min_size_mb is None else min_size_mb,
-        min_age_minutes=10 if min_age_minutes is None else min_age_minutes,
+        min_age_minutes=2 if min_age_minutes is None else min_age_minutes,
         patterns=patterns,
         cache_directory=Path(
             payload.get("cache_directory", default_data_directory() / "traces")
