@@ -319,8 +319,9 @@ def verify_thermo_helper_archive(
     if actual.casefold() != expected:
         raise ThermoHelperChecksumError(
             f"Thermo helper archive {path} failed SHA-256 verification: "
-            f"expected {expected!r}, received {actual!r}. Obtain the pinned "
-            "release archive again from a trusted source."
+            f"expected {expected!r}, received {actual!r}. Only the archive "
+            f"{specification.asset_name!r} of release v{specification.version} "
+            "is accepted; obtain it again from a trusted source."
         )
     return actual
 

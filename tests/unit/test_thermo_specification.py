@@ -68,6 +68,13 @@ class TestThermoHelperRelease:
         assert specification.asset_name.endswith(f".{specification.archive_format}")
         assert specification.executable_name.endswith(".exe") == runtime.startswith("win")
 
+    def test_release_page_url_points_to_the_pinned_version_of_the_download_repository(self) -> None:
+        release = THERMO_HELPER_RELEASE
+        repository_url = release.release_page_url.removesuffix(f"/releases/tag/v{release.version}")
+
+        assert release.release_page_url.endswith(f"/releases/tag/v{release.version}")
+        assert release.specification("win-x64").download_url.startswith(f"{repository_url}/releases/download/")
+
     def test_specification_raises_unsupported_platform_error_listing_supported_runtimes(self) -> None:
         with pytest.raises(UnsupportedPlatformError, match=r"'linux-x64'.*\['win-x64'\]"):
             THERMO_HELPER_RELEASE.specification("linux-x64")

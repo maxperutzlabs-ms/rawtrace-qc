@@ -399,6 +399,16 @@ class TestVerifyThermoHelperArchive:
 
         assert digest == specification.sha256
 
+    def test_checksum_error_names_the_accepted_archive_and_version(self, tmp_path: Path) -> None:
+        archive_path, specification = _create_archive(tmp_path)
+        wrong_specification = replace(specification, sha256="0" * 64)
+
+        with pytest.raises(ThermoHelperChecksumError) as error:
+            verify_thermo_helper_archive(archive_path, specification=wrong_specification)
+
+        assert specification.asset_name in str(error.value)
+        assert f"v{specification.version}" in str(error.value)
+
 
 class TestExtractThermoHelperArchive:
     def test_rejects_existing_extraction_target(self, tmp_path: Path) -> None:

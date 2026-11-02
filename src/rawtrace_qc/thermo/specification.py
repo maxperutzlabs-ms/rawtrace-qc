@@ -12,9 +12,7 @@ from rawtrace_qc.thermo.runtime import find_host_runtime
 
 THERMO_HELPER_NAME = "thermoscanheaderextractor"
 
-_RELEASE_BASE_URL = (
-    "https://github.com/maxperutzlabs-ms/thermo-scan-header-extractor/releases/download"
-)
+_REPOSITORY_URL = "https://github.com/maxperutzlabs-ms/thermo-scan-header-extractor"
 
 ArchiveFormat = Literal["zip"]
 
@@ -50,6 +48,11 @@ class ThermoHelperRelease:
     version: str
     assets: Mapping[str, ThermoHelperAsset]
 
+    @property
+    def release_page_url(self) -> str:
+        """Return the web page listing this release and its archives."""
+        return f"{_REPOSITORY_URL}/releases/tag/v{self.version}"
+
     def specification(self, runtime: str) -> ThermoHelperSpecification:
         """Return the resolved specification for one runtime.
 
@@ -73,7 +76,10 @@ class ThermoHelperRelease:
             version=self.version,
             runtime=runtime,
             asset_name=asset.asset_name,
-            download_url=f"{_RELEASE_BASE_URL}/v{self.version}/{asset.asset_name}",
+            download_url=(
+                f"{_REPOSITORY_URL}/releases/download/"
+                f"v{self.version}/{asset.asset_name}"
+            ),
             sha256=asset.sha256,
             archive_format=asset.archive_format,
             executable_name=asset.executable_name,
