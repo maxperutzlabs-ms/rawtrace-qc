@@ -282,7 +282,7 @@ rawtrace-qc thermo status --helper-path \\server\tools\ThermoScanHeaderExtractor
 rawtrace-qc thermo accept-license --helper-path \\server\tools\ThermoScanHeaderExtractor.exe
 ```
 
-The helper's release version, asset, and checksum are pinned by the installed `rawtrace-qc` release. To upgrade the helper, upgrade `rawtrace-qc` to a release with the newer pin, then run `rawtrace-qc thermo install`; use `--from-zip` when the matching release archive must be transferred offline. Versioned installations are kept separate, and a conflicting existing installation is not silently overwritten. Run `rawtrace-qc thermo status` after upgrading and accept the Thermo agreement again if the helper reports it as not accepted; acceptance recorded by helper v0.1.0 is not carried over to v0.2.0.
+The helper's release version, asset, and checksum are pinned by the installed `rawtrace-qc` release. To upgrade the helper, upgrade `rawtrace-qc` to a release with the newer pin, then run `rawtrace-qc thermo install`; use `--from-zip` when the matching release archive must be transferred offline. Versioned installations are kept separate, and a conflicting existing installation is not silently overwritten. To replace it, or a helper that no longer runs, add `--overwrite`, which removes the existing folder after the new archive has been verified. Run `rawtrace-qc thermo status` after upgrading and accept the Thermo agreement again if the helper reports it as not accepted; acceptance recorded by helper v0.1.0 is not carried over to v0.2.0.
 
 ### Locating a Usable Helper
 

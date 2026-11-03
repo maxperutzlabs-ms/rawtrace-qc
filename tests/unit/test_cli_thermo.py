@@ -6,7 +6,7 @@ import pytest
 from rawtrace_qc import environment
 from rawtrace_qc.cli import main
 from rawtrace_qc.cli import thermo as thermo_cli_module
-from rawtrace_qc.errors import ThermoHelperChecksumError, ThermoHelperDownloadError
+from rawtrace_qc.errors import ThermoHelperChecksumError, ThermoHelperDownloadError, ThermoHelperInstallConflictError
 from rawtrace_qc.thermo import locator as locator_module
 from rawtrace_qc.thermo import managed_thermo_helper_directory
 from tests.support.mock_helper import MockThermoHelper, create_mock_helper_file
@@ -24,7 +24,7 @@ class TestThermoStatusCommand:
         [
             ("not_installed", None, False, "win32", 1, "thermo install"),
             ("unlicensed", WIN_X64_SPECIFICATION.version, False, "win32", 1, "thermo accept-license"),
-            ("invalid_version", "9.9.9", True, "win32", 1, "pinned helper version"),
+            ("invalid_version", "9.9.9", True, "win32", 1, "thermo install --overwrite"),
             ("unsupported_platform", None, False, "linux", 1, "not supported on this system"),
             ("ready", WIN_X64_SPECIFICATION.version, True, "win32", 0, "is ready"),
         ],
@@ -97,8 +97,36 @@ class TestThermoSetupCommands:
         assert result == 0
         assert calls["archive_path"] == archive_path
         assert calls["data_directory"] == data_directory
+        assert calls["overwrite"] is False
         assert str(executable) in output
         assert "thermo accept-license" in output
+
+    def test_install_passes_overwrite_to_library(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        calls: dict[str, object] = {}
+
+        def fake_install(**kwargs: object) -> Path:
+            calls.update(kwargs)
+            return Path("helper.exe")
+
+        monkeypatch.setattr(thermo_cli_module, "install_thermo_helper", fake_install)
+
+        result = main(["thermo", "install", "--overwrite"])
+
+        assert result == 0
+        assert calls["overwrite"] is True
+
+    def test_install_conflict_names_the_overwrite_option(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        def fail_install(**_kwargs: object) -> Path:
+            raise ThermoHelperInstallConflictError("Different installation found.")
+
+        monkeypatch.setattr(thermo_cli_module, "install_thermo_helper", fail_install)
+
+        result = main(["thermo", "install"])
+
+        assert result == 1
+        assert "thermo install --overwrite" in capsys.readouterr().err
 
     def test_install_reports_library_errors_with_failure_exit_code_and_status_hint(
         self,

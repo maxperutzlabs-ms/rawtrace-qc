@@ -312,6 +312,93 @@ class TestInstallThermoHelper:
 
         assert managed_directory.read_text(encoding="utf-8") == "not a directory"
 
+    def test_overwrite_replaces_a_different_install_and_removes_its_files(self, tmp_path: Path) -> None:
+        first_archive, first_specification = _create_archive(tmp_path, filename="first.zip")
+        data_directory = tmp_path / "appdata"
+        executable = install_thermo_helper(
+            first_archive, data_directory=data_directory, specification=first_specification
+        )
+        (executable.parent / "leftover.txt").write_text("stale", encoding="utf-8")
+        second_archive, second_specification = _create_archive(
+            tmp_path, {WIN_X64_SPECIFICATION.executable_name: b"MZnew-helper"}, filename="second.zip"
+        )
+
+        replaced = install_thermo_helper(
+            second_archive, data_directory=data_directory, specification=second_specification, overwrite=True
+        )
+
+        assert replaced.read_bytes() == b"MZnew-helper"
+        assert not (replaced.parent / "leftover.txt").exists()
+        _assert_no_staging_directories(data_directory, second_specification)
+
+    def test_overwrite_downloads_again_over_a_broken_helper_with_a_matching_manifest(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        archive_path, specification = _create_archive(tmp_path)
+        data_directory = tmp_path / "appdata"
+        executable = install_thermo_helper(archive_path, data_directory=data_directory, specification=specification)
+        executable.write_bytes(b"broken")
+
+        def copy_download(destination: Path, *, specification: ThermoHelperSpecification, timeout: float) -> Path:
+            shutil.copyfile(archive_path, destination)
+            return destination
+
+        monkeypatch.setattr(installation_module, "download_thermo_helper_archive", copy_download)
+
+        replaced = install_thermo_helper(data_directory=data_directory, specification=specification, overwrite=True)
+
+        assert replaced.read_bytes() == b"MZmock-helper"
+
+    def test_overwrite_replaces_a_file_at_the_install_location(self, tmp_path: Path) -> None:
+        archive_path, specification = _create_archive(tmp_path)
+        data_directory = tmp_path / "appdata"
+        managed_directory = _managed_directory(data_directory, specification)
+        managed_directory.parent.mkdir(parents=True)
+        managed_directory.write_text("not a directory", encoding="utf-8")
+
+        executable = install_thermo_helper(
+            archive_path, data_directory=data_directory, specification=specification, overwrite=True
+        )
+
+        assert executable.read_bytes() == b"MZmock-helper"
+
+    def test_overwrite_keeps_the_existing_install_when_the_archive_is_rejected(self, tmp_path: Path) -> None:
+        archive_path, specification = _create_archive(tmp_path)
+        data_directory = tmp_path / "appdata"
+        executable = install_thermo_helper(archive_path, data_directory=data_directory, specification=specification)
+        other_archive, _ = _create_archive(
+            tmp_path, {WIN_X64_SPECIFICATION.executable_name: b"MZother-helper"}, filename="other.zip"
+        )
+
+        with pytest.raises(ThermoHelperChecksumError):
+            install_thermo_helper(
+                other_archive, data_directory=data_directory, specification=specification, overwrite=True
+            )
+
+        assert executable.read_bytes() == b"MZmock-helper"
+
+    def test_overwrite_reports_an_error_and_keeps_the_install_when_it_cannot_be_moved(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        archive_path, specification = _create_archive(tmp_path)
+        data_directory = tmp_path / "appdata"
+        executable = install_thermo_helper(archive_path, data_directory=data_directory, specification=specification)
+        original_rename = Path.rename
+
+        def fail_rename_of_install(self: Path, target: Path) -> Path:
+            if self == executable.parent:
+                raise PermissionError("in use")
+            return original_rename(self, target)
+
+        monkeypatch.setattr(Path, "rename", fail_rename_of_install)
+
+        with pytest.raises(ThermoHelperInstallationError, match="in use"):
+            install_thermo_helper(
+                archive_path, data_directory=data_directory, specification=specification, overwrite=True
+            )
+
+        assert executable.read_bytes() == b"MZmock-helper"
+
     def test_reports_installation_error_when_incomplete_directory_cannot_be_moved(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

@@ -73,7 +73,7 @@ class TestCliErrors:
 
         captured = capsys.readouterr()
         assert "Error: Version mismatch." in captured.err
-        assert "Install the pinned helper version" in captured.err
+        assert "thermo install --overwrite" in captured.err
 
     def test_print_cli_error_unsupported_platform(self, capsys: pytest.CaptureFixture[str]) -> None:
         error = UnsupportedPlatformError("Non-Windows.")

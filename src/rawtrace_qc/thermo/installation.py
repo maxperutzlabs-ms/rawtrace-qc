@@ -35,6 +35,7 @@ def install_thermo_helper(
     data_directory: Path | str | None = None,
     specification: ThermoHelperSpecification | None = None,
     timeout: float = 60.0,
+    overwrite: bool = False,
 ) -> Path:
     """Install the pinned Thermo helper from a download or local ZIP archive.
 
@@ -45,6 +46,10 @@ def install_thermo_helper(
     is replaced. Installation never executes the helper or changes its Thermo
     license marker.
 
+    A matching earlier installation is kept as it is, and any other content at
+    the install location is refused, unless `overwrite` is set. The existing
+    content is only removed after the new archive has been verified.
+
     Args:
         archive_path: Local ZIP archive to install. If None (default), download
             the archive from the pinned release URL.
@@ -53,6 +58,9 @@ def install_thermo_helper(
         specification: Pinned helper release metadata. If None (default),
             resolve the specification for the current host runtime.
         timeout: Maximum network timeout in seconds. Defaults to 60.0.
+        overwrite: If True, replace whatever exists at the install location,
+            including a broken helper that still matches the pinned release.
+            Defaults to False.
 
     Returns:
         The managed ThermoScanHeaderExtractor executable path.
@@ -64,9 +72,9 @@ def install_thermo_helper(
         ThermoHelperChecksumError: If the source archive checksum is incorrect.
         ThermoHelperArchiveError: If the source is not a safe ZIP containing
             the expected executable.
-        ThermoHelperInstallConflictError: If the versioned install directory
-            already contains a helper executable from a different or unmanaged
-            installation.
+        ThermoHelperInstallConflictError: If `overwrite` is False and the
+            versioned install directory already contains a helper executable
+            from a different or unmanaged installation.
         ThermoHelperInstallationError: If staging or atomic publication fails.
     """
     if specification is None:
@@ -80,6 +88,7 @@ def install_thermo_helper(
 
     if (
         archive_path is None
+        and not overwrite
         and _path_exists(install_directory)
         and not _is_missing_executable(install_directory, specification)
     ):
@@ -111,8 +120,10 @@ def install_thermo_helper(
             _write_install_manifest(payload_directory, specification)
 
             replace_existing = _path_exists(install_directory)
-            if replace_existing and not _is_missing_executable(
-                install_directory, specification
+            if (
+                replace_existing
+                and not overwrite
+                and not _is_missing_executable(install_directory, specification)
             ):
                 return _existing_install_executable(install_directory, specification)
 
@@ -122,8 +133,10 @@ def install_thermo_helper(
                     install_directory.rename(temporary_directory / "replaced")
                 _publish_install(payload_directory, install_directory)
             except OSError as error:
-                if _path_exists(install_directory) and not _is_missing_executable(
-                    install_directory, specification
+                if (
+                    not overwrite
+                    and _path_exists(install_directory)
+                    and not _is_missing_executable(install_directory, specification)
                 ):
                     return _existing_install_executable(
                         install_directory, specification
@@ -131,7 +144,8 @@ def install_thermo_helper(
                 raise ThermoHelperInstallationError(
                     f"Could not atomically install ThermoScanHeaderExtractor "
                     f"v{specification.version} at {install_directory}: {error}. "
-                    "Check that the managed data directory is writable."
+                    "Check that the managed data directory is writable and that "
+                    "the helper is not running."
                 ) from error
 
             return install_directory / specification.executable_name
@@ -552,7 +566,8 @@ def _existing_install_executable(
     if install_directory.is_symlink() or not install_directory.is_dir():
         raise ThermoHelperInstallConflictError(
             f"Managed Thermo helper location {install_directory} already exists "
-            "but is not a regular installation directory; refusing to overwrite it."
+            "but is not a regular installation directory; refusing to overwrite it. "
+            "Install again with overwrite enabled to replace it."
         )
 
     manifest_path = install_directory / _INSTALL_MANIFEST_NAME
@@ -563,7 +578,8 @@ def _existing_install_executable(
         raise ThermoHelperInstallConflictError(
             f"Managed Thermo helper location {install_directory} already exists "
             "without valid rawtrace-qc installation metadata; refusing to "
-            "overwrite it. Move the existing directory aside after checking it."
+            "overwrite it. Check the existing directory, then install again with "
+            "overwrite enabled."
         ) from error
 
     if (
@@ -578,7 +594,8 @@ def _existing_install_executable(
             f"Managed Thermo helper location {install_directory} does not match "
             f"the pinned release v{specification.version} for runtime "
             f"{specification.runtime!r}; refusing to silently overwrite a different "
-            "or incomplete installation."
+            "or incomplete installation. Install again with overwrite enabled to "
+            "replace it."
         )
     return executable_path
 

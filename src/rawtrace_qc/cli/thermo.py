@@ -51,6 +51,7 @@ def install(
     *,
     from_zip: Path | None = None,
     data_directory: Path | None = None,
+    overwrite: bool = False,
 ) -> int:
     """Install the pinned helper from its release or a local ZIP archive.
 
@@ -58,6 +59,7 @@ def install(
         from_zip: Install from this local ZIP instead of downloading it.
         data_directory: Install into this application data folder instead of
             the default.
+        overwrite: Replace whatever is already at the install location.
 
     Returns:
         Exit code `0` when installation succeeds, otherwise `1`.
@@ -66,6 +68,7 @@ def install(
         executable = install_thermo_helper(
             archive_path=from_zip,
             data_directory=data_directory,
+            overwrite=overwrite,
         )
     except ThermoHelperError as error:
         print_cli_error(error, thermo=True)
@@ -125,7 +128,8 @@ def _status_action(state: ThermoHelperState) -> str:
             "Review and accept the terms with `rawtrace-qc thermo accept-license`."
         ),
         ThermoHelperState.INVALID_VERSION: (
-            "Install the pinned helper version with `rawtrace-qc thermo install`."
+            "Replace it with the pinned helper version using "
+            "`rawtrace-qc thermo install --overwrite`."
         ),
         ThermoHelperState.UNSUPPORTED_PLATFORM: (
             "Thermo .raw extraction and helper setup are not supported on this "

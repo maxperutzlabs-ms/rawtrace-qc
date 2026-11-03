@@ -6,6 +6,7 @@ import sys
 
 from rawtrace_qc.errors import (
     ThermoHelperError,
+    ThermoHelperInstallConflictError,
     ThermoHelperLicenseError,
     ThermoHelperNotFoundError,
     ThermoHelperVersionError,
@@ -52,7 +53,15 @@ def thermo_setup_hint(error: Exception) -> str | None:
             "`rawtrace-qc thermo accept-license`."
         )
     if isinstance(error, ThermoHelperVersionError):
-        return "Install the pinned helper version with `rawtrace-qc thermo install`."
+        return (
+            "Replace it with the pinned helper version using "
+            "`rawtrace-qc thermo install --overwrite`."
+        )
+    if isinstance(error, ThermoHelperInstallConflictError):
+        return (
+            "Replace the existing installation with "
+            "`rawtrace-qc thermo install --overwrite`."
+        )
     if isinstance(error, UnsupportedPlatformError):
         return (
             "Thermo .raw extraction is not supported on this system; see the "
