@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from enum import StrEnum
@@ -171,19 +172,35 @@ def extract_batch(
     )
 
 
+def create_extractor(
+    vendor: str, *, cancel: threading.Event | None = None
+) -> Extractor:
+    """Create the extractor for one acquisition vendor.
+
+    Args:
+        vendor: Vendor of the acquisition, as reported by discovery.
+        cancel: Optional event that stops a running Thermo helper when set from
+            another thread. Bruker extraction ignores it. Defaults to None.
+
+    Returns:
+        A new extractor for `vendor`.
+
+    Raises:
+        ConfigurationError: If no extractor exists for `vendor`.
+    """
+    if vendor == Vendor.BRUKER:
+        return BrukerExtractor()
+    if vendor == Vendor.THERMO:
+        return ThermoExtractor(cancel=cancel)
+    raise ConfigurationError(f"No extractor is registered for vendor {vendor!r}.")
+
+
 def _get_extractor(
     vendor: str,
     extractor_instances: dict[str, Extractor],
 ) -> Extractor:
     if vendor not in extractor_instances:
-        if vendor == Vendor.BRUKER:
-            extractor_instances[vendor] = BrukerExtractor()
-        elif vendor == Vendor.THERMO:
-            extractor_instances[vendor] = ThermoExtractor()
-        else:
-            raise ConfigurationError(
-                f"No extractor is registered for vendor {vendor!r}."
-            )
+        extractor_instances[vendor] = create_extractor(vendor)
     return extractor_instances[vendor]
 
 

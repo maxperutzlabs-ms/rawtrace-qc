@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
+import sqlite3
 import threading
 from collections.abc import Iterable
+from contextlib import closing
 from pathlib import Path
+from typing import Any
 
 import pytest
 from rawtrace_qc.discovery import DiscoveryCandidate, FileFormat, Vendor
-from rawtrace_qc.errors import ConfigurationError, OperationCancelledError, ProcessingError
+from rawtrace_qc.errors import (
+    ConfigurationError,
+    ExtractionError,
+    OperationCancelledError,
+    ProcessingError,
+    ThermoHelperLicenseError,
+)
 from rawtrace_qc.extractors import BrukerExtractor, ThermoExtractor
 from rawtrace_qc.gui.cache import CacheResult, TraceCache
 from rawtrace_qc.gui.config import GuiSettings, load_settings, save_settings
@@ -73,20 +82,67 @@ class TestTraceCache:
         assert second.extraction.ms1_path.name == "trace.ms1-trace.parquet"
         assert load_trace(second.extraction.ms1_path).metadata["source_filename"] == bruker_fixture.name
 
-    def test_partial_cache_is_rebuilt_when_both_levels_are_requested(
+    def test_file_with_one_ms_level_hits_the_cache_when_all_levels_are_requested(
         self, bruker_fixture: Path, tmp_path: Path
     ) -> None:
+        with closing(sqlite3.connect(bruker_fixture / "analysis.tdf")) as connection, connection:
+            connection.execute("DELETE FROM Frames WHERE Id > 1")
+            connection.execute("DELETE FROM DiaFrameMsMsInfo")
+            connection.commit()
+        cache = TraceCache(tmp_path / "cache")
+        candidate = _bruker_candidate(bruker_fixture)
+
+        first = cache.extract(candidate, BrukerExtractor())
+        second = cache.extract(candidate, BrukerExtractor())
+
+        assert first.cache_hit is False
+        assert second.cache_hit is True
+        assert second.extraction == first.extraction
+        assert second.extraction.msn_path is None
+
+    def test_interrupted_extraction_leaves_no_entry_and_the_next_run_extracts_all_levels(
+        self, bruker_fixture: Path, tmp_path: Path
+    ) -> None:
+        class InterruptedExtractor(BrukerExtractor):
+            def extract(
+                self, input_path: Path, output_directory: Path | None = None, **kwargs: Any
+            ) -> ExtractionResult:
+                BrukerExtractor().extract(input_path, output_directory, **{**kwargs, "select_msn": False})
+                raise OperationCancelledError("stopped")
+
+        cache = TraceCache(tmp_path / "cache")
+        candidate = _bruker_candidate(bruker_fixture)
+
+        with pytest.raises(OperationCancelledError):
+            cache.extract(candidate, InterruptedExtractor())
+        complete = cache.extract(candidate, BrukerExtractor())
+
+        assert list((tmp_path / "cache").iterdir()) == [complete.extraction.ms1_path.parent]
+        assert complete.cache_hit is False
+        assert complete.extraction.msn_path.is_file()
+
+    def test_unreadable_entry_is_replaced(self, bruker_fixture: Path, tmp_path: Path) -> None:
         cache = TraceCache(tmp_path / "cache")
         candidate = _bruker_candidate(bruker_fixture)
         first = cache.extract(candidate, BrukerExtractor())
-        assert first.extraction.msn_path is not None
-        first.extraction.msn_path.unlink()
+        first.extraction.ms1_path.write_bytes(b"not parquet")
 
         second = cache.extract(candidate, BrukerExtractor())
+        third = cache.extract(candidate, BrukerExtractor())
 
         assert second.cache_hit is False
-        assert second.extraction.msn_path is not None
-        assert second.extraction.msn_path.is_file()
+        assert third.cache_hit is True
+        assert load_trace(third.extraction.ms1_path).table.num_rows > 0
+
+    def test_failed_extraction_leaves_no_staging_directory(self, tmp_path: Path) -> None:
+        cache = TraceCache(tmp_path / "cache")
+        source = tmp_path / "broken.d"
+        source.mkdir()
+
+        with pytest.raises(ExtractionError):
+            cache.extract(_bruker_candidate(source), BrukerExtractor())
+
+        assert list((tmp_path / "cache").iterdir()) == []
 
 
 class TestReportGeneration:
@@ -166,6 +222,7 @@ class TestReportGenerationWithBadFiles:
         monkeypatch: pytest.MonkeyPatch,
         *,
         bad_extract: Iterable[str] = (),
+        unready_helper: Iterable[str] = (),
         no_artifacts: Iterable[str] = (),
         bad_load: Iterable[str] = (),
         bad_process: Iterable[str] = (),
@@ -179,6 +236,8 @@ class TestReportGenerationWithBadFiles:
             name = candidate.path.name
             if name in bad_extract:
                 raise OSError(f"cannot read {name}")
+            if name in set(unready_helper):
+                raise ThermoHelperLicenseError(f"license not accepted for {name}")
             if name in no_artifacts:
                 return CacheResult(ExtractionResult(), False)
             return CacheResult(ExtractionResult(ms1_path=candidate.path), name.startswith("cached"))
@@ -210,6 +269,7 @@ class TestReportGenerationWithBadFiles:
         ("failure", "reason", "detail"),
         [
             ("bad_extract", ExclusionReason.EXTRACTION_FAILED, "cannot read bad.raw"),
+            ("unready_helper", ExclusionReason.THERMO_NOT_READY, "license not accepted for bad.raw"),
             ("no_artifacts", ExclusionReason.PROCESSING_FAILED, "no MS1 or MS2 scans"),
             ("bad_load", ExclusionReason.PROCESSING_FAILED, "cannot load bad.raw"),
             ("bad_process", ExclusionReason.PROCESSING_FAILED, "cannot process bad.raw"),

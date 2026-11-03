@@ -5,12 +5,14 @@ from pathlib import Path
 
 import pytest
 from rawtrace_qc.discovery import DiscoveryIssue, DiscoveryOptions, SkipReason, Vendor
-from rawtrace_qc.errors import ThermoHelperNotFoundError
+from rawtrace_qc.errors import ConfigurationError, ThermoHelperNotFoundError
+from rawtrace_qc.extractors import BrukerExtractor, ThermoExtractor
 from rawtrace_qc.models import ExtractionResult
 from rawtrace_qc.thermo import ThermoHelperState, ThermoHelperStatus
 from rawtrace_qc.workflows import (
     BatchExtractionResult,
     ExtractionOutcomeStatus,
+    create_extractor,
     extract_batch,
 )
 from rawtrace_qc.workflows import extraction as workflow_module
@@ -88,7 +90,7 @@ class TestExtractBatch:
     def test_single_thermo_file_is_extracted_directly(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         raw_file = _create_raw(tmp_path / "sample.raw")
         thermo = RecordingExtractor()
-        monkeypatch.setattr(workflow_module, "ThermoExtractor", lambda: thermo)
+        monkeypatch.setattr(workflow_module, "ThermoExtractor", lambda **_: thermo)
         monkeypatch.setattr(workflow_module, "get_thermo_helper_status", _ready_helper_status)
 
         result = extract_batch([raw_file], discovery_options=_discovery_options())
@@ -102,7 +104,7 @@ class TestExtractBatch:
     def test_glob_input_is_expanded_before_extraction(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         raw_file = _create_raw(tmp_path / "sample.raw")
         thermo = RecordingExtractor()
-        monkeypatch.setattr(workflow_module, "ThermoExtractor", lambda: thermo)
+        monkeypatch.setattr(workflow_module, "ThermoExtractor", lambda **_: thermo)
         monkeypatch.setattr(workflow_module, "get_thermo_helper_status", _ready_helper_status)
 
         result = extract_batch([tmp_path / "*.raw"], discovery_options=_discovery_options())
@@ -118,7 +120,7 @@ class TestExtractBatch:
         source = tmp_path / "source"
         nested_raw = _create_raw(source / "nested" / "sample.raw")
         thermo = RecordingExtractor()
-        monkeypatch.setattr(workflow_module, "ThermoExtractor", lambda: thermo)
+        monkeypatch.setattr(workflow_module, "ThermoExtractor", lambda **_: thermo)
         monkeypatch.setattr(workflow_module, "get_thermo_helper_status", _ready_helper_status)
 
         result = extract_batch([source], recursive=recursive, discovery_options=_discovery_options())
@@ -136,7 +138,7 @@ class TestExtractBatch:
         _create_bruker(tmp_path / "run.d")
         thermo = RecordingExtractor()
         bruker = RecordingExtractor()
-        monkeypatch.setattr(workflow_module, "ThermoExtractor", lambda: thermo)
+        monkeypatch.setattr(workflow_module, "ThermoExtractor", lambda **_: thermo)
         monkeypatch.setattr(workflow_module, "BrukerExtractor", lambda: bruker)
         monkeypatch.setattr(workflow_module, "get_thermo_helper_status", _ready_helper_status)
 
@@ -164,7 +166,7 @@ class TestExtractBatch:
             status_calls += 1
             return _not_installed_status()
 
-        monkeypatch.setattr(workflow_module, "ThermoExtractor", lambda: thermo)
+        monkeypatch.setattr(workflow_module, "ThermoExtractor", lambda **_: thermo)
         monkeypatch.setattr(workflow_module, "BrukerExtractor", lambda: bruker)
         monkeypatch.setattr(workflow_module, "get_thermo_helper_status", helper_status)
 
@@ -186,7 +188,7 @@ class TestExtractBatch:
         first_raw = _create_raw(tmp_path / "first.raw")
         second_raw = _create_raw(tmp_path / "second.raw")
         thermo = RecordingExtractor({first_raw: RuntimeError("mock extraction failure")})
-        monkeypatch.setattr(workflow_module, "ThermoExtractor", lambda: thermo)
+        monkeypatch.setattr(workflow_module, "ThermoExtractor", lambda **_: thermo)
         monkeypatch.setattr(workflow_module, "get_thermo_helper_status", _ready_helper_status)
 
         result = extract_batch([first_raw, second_raw], discovery_options=_discovery_options())
@@ -202,7 +204,7 @@ class TestExtractBatch:
         raw_file = _create_raw(tmp_path / "sample.raw")
         output_directory = tmp_path / "traces"
         thermo = RecordingExtractor()
-        monkeypatch.setattr(workflow_module, "ThermoExtractor", lambda: thermo)
+        monkeypatch.setattr(workflow_module, "ThermoExtractor", lambda **_: thermo)
         monkeypatch.setattr(workflow_module, "get_thermo_helper_status", _ready_helper_status)
 
         extract_batch(
@@ -244,6 +246,18 @@ class TestExtractBatch:
         assert result.outcomes == ()
         assert [skip.reason for skip in result.discovery_skips] == [SkipReason.TOO_SMALL]
         assert result.exit_code == 1
+
+
+class TestCreateExtractor:
+    @pytest.mark.parametrize(
+        ("vendor", "expected"), [(Vendor.BRUKER, BrukerExtractor), (Vendor.THERMO, ThermoExtractor)]
+    )
+    def test_returns_the_extractor_of_each_vendor(self, vendor: Vendor, expected: type) -> None:
+        assert isinstance(create_extractor(vendor), expected)
+
+    def test_rejects_an_unknown_vendor_by_name(self) -> None:
+        with pytest.raises(ConfigurationError, match="'waters'"):
+            create_extractor("waters")
 
 
 class TestBatchExtractionResult:

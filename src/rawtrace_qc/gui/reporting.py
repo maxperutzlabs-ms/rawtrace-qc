@@ -12,19 +12,21 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
-from rawtrace_qc.discovery import DiscoveryCandidate, Vendor
+from rawtrace_qc.discovery import DiscoveryCandidate
 from rawtrace_qc.errors import (
     ConfigurationError,
     OperationCancelledError,
     RawtraceError,
+    ThermoHelperError,
 )
-from rawtrace_qc.extractors import BrukerExtractor, ThermoExtractor
+from rawtrace_qc.extractors.common import is_valid_output_name
 from rawtrace_qc.gui.cache import TraceCache
 from rawtrace_qc.gui.workflow import ExclusionReason, FileExclusion
 from rawtrace_qc.models import ExtractionResult
 from rawtrace_qc.processing import ProcessedTable, process_traces
 from rawtrace_qc.report import ReportOptions, write_html
 from rawtrace_qc.traces import load_trace
+from rawtrace_qc.workflows import create_extractor
 
 
 class ReportStage(StrEnum):
@@ -101,10 +103,7 @@ class ReportGenerationOptions:
                 f"Report precision_mode {self.precision_mode!r} must be 'low' "
                 "or 'high'."
             )
-        if self.output_name is not None and (
-            not self.output_name.strip()
-            or any(character in self.output_name for character in '\\/:*?"<>|')
-        ):
+        if self.output_name is not None and not is_valid_output_name(self.output_name):
             raise ConfigurationError(
                 "Report output_name must be a valid filename without path separators."
             )
@@ -226,11 +225,14 @@ def generate_report(
         try:
             cached = cache.extract(
                 candidate,
-                _extractor_for(candidate, cancel),
+                create_extractor(candidate.vendor, cancel=cancel),
                 precision_mode=selected_options.precision_mode,
             )
         except OperationCancelledError:
             raise
+        except ThermoHelperError as error:
+            exclude(candidate, ExclusionReason.THERMO_NOT_READY, str(error))
+            continue
         except Exception as error:
             exclude(candidate, ExclusionReason.EXTRACTION_FAILED, _error_detail(error))
             continue
@@ -284,18 +286,6 @@ def _error_detail(error: Exception) -> str:
     if isinstance(error, RawtraceError):
         return str(error)
     return f"{type(error).__name__}: {error}"
-
-
-def _extractor_for(
-    candidate: DiscoveryCandidate, cancel: threading.Event | None
-) -> BrukerExtractor | ThermoExtractor:
-    if candidate.vendor == Vendor.BRUKER:
-        return BrukerExtractor()
-    if candidate.vendor == Vendor.THERMO:
-        return ThermoExtractor(cancel=cancel)
-    raise ConfigurationError(
-        f"No GUI extractor is registered for vendor {candidate.vendor!r}."
-    )
 
 
 def _output_directory(

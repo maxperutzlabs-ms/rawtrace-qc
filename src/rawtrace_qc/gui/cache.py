@@ -3,33 +3,21 @@
 from __future__ import annotations
 
 import hashlib
+import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
 
 from rawtrace_qc.discovery import DiscoveryCandidate
 from rawtrace_qc.errors import ArtifactValidationError, ConfigurationError
-from rawtrace_qc.extractors.protocol import PrecisionMode
+from rawtrace_qc.extractors.protocol import Extractor, PrecisionMode
 from rawtrace_qc.models import ExtractionResult
 from rawtrace_qc.traces import load_trace
 
 _CACHE_OUTPUT_NAME = "trace"
-
-
-class CacheExtractor(Protocol):
-    """Define the extractor operation required by `TraceCache`."""
-
-    def extract(
-        self,
-        input_path: Path,
-        output_directory: Path | None = None,
-        output_name: str | None = None,
-        precision_mode: PrecisionMode = "low",
-        *,
-        select_ms1: bool = True,
-        select_msn: bool = True,
-    ) -> ExtractionResult:
-        """Extract trace artifacts into the requested output directory."""
+# Entries of earlier layouts may be incomplete, because they were written in
+# place. Changing this value leaves them unused.
+_CACHE_LAYOUT = "2"
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,7 +38,7 @@ class TraceCache:
     def extract(
         self,
         candidate: DiscoveryCandidate,
-        extractor: CacheExtractor,
+        extractor: Extractor,
         *,
         precision_mode: PrecisionMode = "low",
         select_ms1: bool = True,
@@ -60,8 +48,12 @@ class TraceCache:
 
         The cache key includes the resolved source path, source metadata,
         vendor, extractor class, precision, and selected MS levels. Existing
-        cache artifacts are loaded through `load_trace()` so incomplete or
+        cache artifacts are loaded through `load_trace()` so unreadable or
         incompatible files are treated as cache misses.
+
+        An extraction only appears in the cache once it has finished, so the
+        artifacts in an entry are everything the acquisition provides. A file
+        without MSn scans therefore hits the cache with its MS1 artifact alone.
 
         Args:
             candidate: Validated raw acquisition to extract.
@@ -75,8 +67,6 @@ class TraceCache:
 
         Raises:
             ConfigurationError: If the source signature cannot be read.
-            ArtifactValidationError: If a fresh extractor returns an invalid
-                artifact.
         """
         source = candidate.path.expanduser().resolve()
         cache_directory = self.directory / _cache_key(
@@ -88,7 +78,6 @@ class TraceCache:
             select_msn,
         )
         cached = _read_cached_result(
-            source,
             cache_directory,
             select_ms1=select_ms1,
             select_msn=select_msn,
@@ -96,27 +85,46 @@ class TraceCache:
         if cached is not None:
             return CacheResult(cached, True)
 
-        result = extractor.extract(
-            source,
-            output_directory=cache_directory,
-            output_name=_CACHE_OUTPUT_NAME,
-            precision_mode=precision_mode,
-            select_ms1=select_ms1,
-            select_msn=select_msn,
+        self.directory.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix=".staging-", dir=self.directory
+        ) as staging:
+            staged_directory = Path(staging) / cache_directory.name
+            result = extractor.extract(
+                source,
+                output_directory=staged_directory,
+                output_name=_CACHE_OUTPUT_NAME,
+                precision_mode=precision_mode,
+                select_ms1=select_ms1,
+                select_msn=select_msn,
+            )
+            if result.ms1_path is None and result.msn_path is None:
+                return CacheResult(result, False)
+            shutil.rmtree(cache_directory, ignore_errors=True)
+            staged_directory.rename(cache_directory)
+        return CacheResult(
+            ExtractionResult(
+                ms1_path=_published_path(result.ms1_path, cache_directory),
+                msn_path=_published_path(result.msn_path, cache_directory),
+            ),
+            False,
         )
-        _validate_result(result)
-        return CacheResult(result, False)
+
+
+def _published_path(staged_path: Path | None, cache_directory: Path) -> Path | None:
+    return None if staged_path is None else cache_directory / staged_path.name
 
 
 def _cache_key(
     source: Path,
     candidate: DiscoveryCandidate,
-    extractor: CacheExtractor,
+    extractor: Extractor,
     precision_mode: PrecisionMode,
     select_ms1: bool,
     select_msn: bool,
 ) -> str:
     digest = hashlib.sha256()
+    _update_digest(digest, _CACHE_LAYOUT)
     _update_digest(digest, str(source).casefold())
     _update_digest(digest, candidate.vendor)
     _update_digest(digest, candidate.format)
@@ -150,7 +158,6 @@ def _cache_key(
 
 
 def _read_cached_result(
-    source: Path,
     cache_directory: Path,
     *,
     select_ms1: bool,
@@ -160,32 +167,23 @@ def _read_cached_result(
         "ms1": cache_directory / f"{_CACHE_OUTPUT_NAME}.ms1-trace.parquet",
         "msn": cache_directory / f"{_CACHE_OUTPUT_NAME}.msn-trace.parquet",
     }
-    requested = {
+    present = {
         level: path
         for level, path in expected.items()
-        if (level == "ms1" and select_ms1) or (level == "msn" and select_msn)
+        if ((level == "ms1" and select_ms1) or (level == "msn" and select_msn))
+        and path.is_file()
     }
-    if not requested or any(not path.is_file() for path in requested.values()):
+    if not present:
         return None
     try:
-        for path in requested.values():
+        for path in present.values():
             load_trace(path)
     except ArtifactValidationError:
         return None
     return ExtractionResult(
-        ms1_path=requested.get("ms1"),
-        msn_path=requested.get("msn"),
+        ms1_path=present.get("ms1"),
+        msn_path=present.get("msn"),
     )
-
-
-def _validate_result(result: ExtractionResult) -> None:
-    for path in (result.ms1_path, result.msn_path):
-        if path is None:
-            continue
-        try:
-            load_trace(path)
-        except ArtifactValidationError:
-            raise
 
 
 def _update_digest(digest: hashlib._Hash, value: str) -> None:

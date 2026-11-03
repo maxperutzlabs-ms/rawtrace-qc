@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
@@ -278,4 +279,4 @@ class RawFileSelection:
 
 
 def _path_key(path: Path) -> str:
-    return str(Path(path).expanduser().resolve()).casefold()
+    return os.path.normcase(Path(path).expanduser().resolve())
