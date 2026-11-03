@@ -285,7 +285,7 @@ The helper's release version, asset, and checksum are pinned by the installed `r
 - `UnsupportedPlatformError`: Raised when the current runtime has no pinned helper release (currently only `win-x64` is supported; `win-arm64` uses it).
 - `ThermoHelperNotFoundError`: Raised when no executable is found at the prioritized locations, with searched paths and installation guidance.
 - `ThermoHelperVersionError`: Raised when the helper reports a mismatched version or fails to report a readable version.
-- `ThermoHelperLicenseError`: Raised when the Thermo license agreement has not been accepted via `ThermoScanHeaderExtractor.exe --agree-to-terms`.
+- `ThermoHelperLicenseError`: Raised when the Thermo license agreement has not been accepted. Accept it with `rawtrace-qc thermo accept-license` or `accept_thermo_license()`.
 
 ### Basic Helper Example
 

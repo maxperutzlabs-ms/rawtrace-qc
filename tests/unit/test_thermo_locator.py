@@ -166,7 +166,7 @@ class TestGetThermoHelperStatus:
         assert status.version == WIN_X64_SPECIFICATION.version
         assert not status.license_accepted
         assert not status.is_ready
-        assert "--agree-to-terms" in status.message
+        assert "has not been accepted" in status.message
 
     def test_returns_ready_state_when_version_matches_and_helper_reports_license_accepted(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

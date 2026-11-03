@@ -177,8 +177,7 @@ def get_thermo_helper_status(
             message=(
                 f"ThermoScanHeaderExtractor executable was not found. "
                 f"Checked: {searched_summary}. Please install "
-                f"ThermoScanHeaderExtractor v{specification.version} or "
-                "supply a valid executable path."
+                f"ThermoScanHeaderExtractor v{specification.version}."
             ),
             expected_version=specification.version,
         )
@@ -237,9 +236,7 @@ def get_thermo_helper_status(
             message=(
                 f"ThermoScanHeaderExtractor at {candidate} is installed "
                 f"(version {reported_version}), but the Thermo license "
-                "agreement has not been accepted. Run "
-                f"'{candidate.name} --agree-to-terms' to accept the license "
-                "before use."
+                "agreement has not been accepted."
             ),
             expected_version=specification.version,
         )
