@@ -5,7 +5,14 @@ from pathlib import Path
 import pytest
 from rawtrace_qc.cli import extract as extract_cli_module
 from rawtrace_qc.cli import main
-from rawtrace_qc.discovery import DiscoveryCandidate, DiscoveryIssue, SkippedAcquisition, SkipReason, Vendor
+from rawtrace_qc.discovery import (
+    DiscoveryCandidate,
+    DiscoveryIssue,
+    DiscoveryOptions,
+    SkippedAcquisition,
+    SkipReason,
+    Vendor,
+)
 from rawtrace_qc.errors import ExtractionError, ThermoHelperCommandError, ThermoHelperNotFoundError
 from rawtrace_qc.models import ExtractionResult
 from rawtrace_qc.workflows import (
@@ -63,6 +70,7 @@ class TestExtractCommand:
             "precision_mode": "high",
             "select_ms1": False,
             "select_msn": True,
+            "discovery_options": DiscoveryOptions(),
         }
         assert "succeeded" in output
         assert "sample.msn-trace.parquet" in output
@@ -110,6 +118,29 @@ class TestExtractCommand:
         assert result == 0
         assert calls["select_ms1"] is select_ms1
         assert calls["select_msn"] is select_msn
+
+    def test_threshold_flags_are_converted_to_discovery_options(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls: dict[str, object] = {}
+
+        def fake_extract_batch(paths, **kwargs):
+            calls.update(kwargs)
+            return BatchExtractionResult(outcomes=(), discovery_issues=())
+
+        monkeypatch.setattr(extract_cli_module, "extract_batch", fake_extract_batch)
+
+        result = main(["extract", str(tmp_path), "--min-age-minutes", "0.5", "--min-size-mb", "0"])
+
+        assert result == 0
+        assert calls["discovery_options"] == DiscoveryOptions(min_size_bytes=0, min_age_seconds=30.0)
+
+    def test_negative_threshold_is_rejected_naming_the_flag(self, tmp_path: Path, capsys) -> None:
+        with pytest.raises(SystemExit) as exit_info:
+            main(["extract", str(tmp_path), "--min-age-minutes", "-1"])
+
+        assert exit_info.value.code != 0
+        assert "--min-age-minutes" in capsys.readouterr().err
 
     def test_report_lists_every_acquisition_by_path_with_its_reason(self, tmp_path: Path, monkeypatch, capsys) -> None:
         corrupt = tmp_path / "a.raw"

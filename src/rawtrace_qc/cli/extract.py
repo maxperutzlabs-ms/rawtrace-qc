@@ -5,13 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated, Literal
 
-from cyclopts import Parameter
+from cyclopts import Parameter, validators
 
 from rawtrace_qc.cli.errors import (
     CHECK_THERMO_SETUP,
     print_cli_error,
     thermo_setup_hint,
 )
+from rawtrace_qc.discovery import DiscoveryOptions
 from rawtrace_qc.errors import RawtraceError, ThermoHelperError
 from rawtrace_qc.workflows import (
     BatchExtractionOutcome,
@@ -19,6 +20,9 @@ from rawtrace_qc.workflows import (
     ExtractionOutcomeStatus,
     extract_batch,
 )
+
+_BYTES_PER_MB = 1024 * 1024
+_DEFAULT_OPTIONS = DiscoveryOptions()
 
 
 def extract(
@@ -30,6 +34,12 @@ def extract(
     precision: Literal["low", "high"] = "low",
     ms1: Annotated[bool, Parameter(negative_bool=())] = False,
     msn: Annotated[bool, Parameter(negative_bool=())] = False,
+    min_age_minutes: Annotated[
+        float, Parameter(validator=validators.Number(gte=0))
+    ] = _DEFAULT_OPTIONS.min_age_seconds / 60,
+    min_size_mb: Annotated[
+        float, Parameter(validator=validators.Number(gte=0))
+    ] = _DEFAULT_OPTIONS.min_size_bytes / _BYTES_PER_MB,
 ) -> int:
     """Extract scan traces from acquisition paths or directories.
 
@@ -43,6 +53,9 @@ def extract(
         precision: Trace precision, either `low` or `high`. Defaults to `low`.
         ms1: If True, extract only MS1 unless `msn` is also True. Defaults to False.
         msn: If True, extract only MSn unless `ms1` is also True. Defaults to False.
+        min_age_minutes: Skip acquisitions modified more recently than this.
+            `0` turns the check off.
+        min_size_mb: Skip acquisitions smaller than this. `0` turns the check off.
 
     Returns:
         Exit code zero only when all candidates succeed and there are no
@@ -58,6 +71,10 @@ def extract(
             precision_mode=precision,
             select_ms1=ms1 or select_both_levels,
             select_msn=msn or select_both_levels,
+            discovery_options=DiscoveryOptions(
+                min_size_bytes=int(min_size_mb * _BYTES_PER_MB),
+                min_age_seconds=min_age_minutes * 60,
+            ),
         )
     except RawtraceError as error:
         print_cli_error(error)

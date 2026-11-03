@@ -241,11 +241,13 @@ rawtrace-qc extract sample.raw run.d
 rawtrace-qc extract /data/acquisitions --recursive --output-dir /data/traces --precision high --ms1
 ```
 
-For each supplied path, the library first validates it as one complete acquisition. A valid Thermo `.raw` file or Bruker `.d` directory is processed directly. Any path that is not a valid acquisition is treated as a directory to scan; a path that cannot be scanned is reported as a discovery issue. By default, directory scans inspect direct children. `--recursive` includes descendants, while discovery still treats a complete Bruker `.d` directory as one acquisition rather than scanning inside it.
+For each supplied path, the library first validates it as one complete acquisition. A valid Thermo `.raw` file or Bruker `.d` directory is processed directly. A recognized acquisition that is too recent or too small is reported as skipped. Any other path that is not a valid acquisition is treated as a directory to scan; a path that cannot be scanned is reported as a discovery issue. By default, directory scans inspect direct children. `--recursive` includes descendants, while discovery still treats a complete Bruker `.d` directory as one acquisition rather than scanning inside it.
 
 The command also accepts quoted glob patterns, for example `rawtrace-qc extract "/data/**/*.raw"`. The pattern is expanded by the library, so `**` matches recursively regardless of `--recursive`; that flag only controls traversal of matched directories that are not complete acquisitions. An unmatched pattern or nonexistent literal path is reported as a discovery issue.
 
 Without `--output-dir`, each acquisition's traces are written beside that acquisition. The default names retain the source name, including `.raw` or `.d`, followed by `.ms1-trace.parquet` or `.msn-trace.parquet`. `--output-dir DIR` sends every candidate's artifacts to the shared directory. Existing artifacts with the same destination name are overwritten by the extractors.
+
+`--min-age-minutes` (default `2`) skips acquisitions modified more recently than this, which protects runs that are still being written. `--min-size-mb` (default `1`) skips smaller acquisitions, which are usually failed runs. For a Bruker `.d` folder, both checks apply to its `.tdf_bin` file. `0` turns a check off, so a run still being written or an empty file can then reach extraction and may fail or produce incomplete traces.
 
 With no MS-level flags, both levels are selected. `--ms1` selects only MS1, `--msn` selects only MSn, and supplying both flags selects both. A single-level selection can fail for an acquisition that does not contain that level. `--precision low` (the default) stores trace values as float32; `--precision high` stores them as float64.
 
