@@ -76,10 +76,11 @@ def describe_thermo_status(status: ThermoHelperStatus) -> ThermoToolView:
         return ThermoToolView(
             installation="Not usable",
             license="Unknown",
+            can_install=True,
             can_open_folder=True,
             detail=(
-                f"{status.message} To install it again, delete the install folder, "
-                "then reopen this window."
+                f"{status.message} Download or Install from ZIP replaces the "
+                "contents of the install folder."
             ),
         )
     return ThermoToolView(
@@ -466,7 +467,7 @@ def create_thermo_tool_dialog(
             self._run_action(
                 f"Downloading ThermoScanHeaderExtractor "
                 f"v{THERMO_HELPER_RELEASE.version}, please wait...",
-                install_thermo_helper,
+                lambda: install_thermo_helper(overwrite=True),
                 self._action_changed_status,
             )
 
@@ -481,7 +482,7 @@ def create_thermo_tool_dialog(
                 return
             self._run_action(
                 "Installing ThermoScanHeaderExtractor, please wait...",
-                lambda: install_thermo_helper(path),
+                lambda: install_thermo_helper(path, overwrite=True),
                 self._action_changed_status,
             )
 

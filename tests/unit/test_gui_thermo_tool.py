@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import time
 from collections.abc import Callable
+from dataclasses import replace
+from functools import partial
 from pathlib import Path
 from typing import Any
+from zipfile import ZipFile
 
 import pytest
 from rawtrace_qc import environment
@@ -24,7 +28,14 @@ from rawtrace_qc.gui.thermo_tool import (
     thermo_tool_required_message,
     thermo_tool_tooltip,
 )
-from rawtrace_qc.thermo import THERMO_HELPER_RELEASE, ThermoHelperState, ThermoHelperStatus
+from rawtrace_qc.thermo import (
+    THERMO_HELPER_RELEASE,
+    ThermoHelperState,
+    ThermoHelperStatus,
+    install_thermo_helper,
+    managed_thermo_helper_directory,
+)
+from tests.support.thermo_helper import WIN_X64_SPECIFICATION
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 QtCore = pytest.importorskip("PySide6.QtCore")
@@ -109,12 +120,13 @@ class TestDescribeThermoStatus:
 
         assert (view.can_install, view.can_review_license, view.can_accept_license) == (True, False, False)
 
-    def test_invalid_version_explains_the_problem_and_offers_the_folder(self) -> None:
+    def test_invalid_version_explains_the_problem_and_offers_replacing_the_install(self) -> None:
         view = describe_thermo_status(_status(ThermoHelperState.INVALID_VERSION, "wrong version"))
 
         assert view.can_open_folder
-        assert not view.can_install
+        assert view.can_install
         assert "wrong version" in view.detail
+        assert "replaces" in view.detail
 
     def test_unsupported_platform_offers_no_actions(self) -> None:
         view = describe_thermo_status(_status(ThermoHelperState.UNSUPPORTED_PLATFORM, "linux-x64 unsupported"))
@@ -197,11 +209,40 @@ class TestThermoToolDialog:
         assert window.show_license_button.isEnabled()
         assert not window.accept_license_button.isEnabled()
 
-    def test_invalid_version_shows_the_helper_message_and_folder_button(self, dialog) -> None:
+    def test_invalid_version_shows_the_helper_message_and_the_install_and_folder_buttons(self, dialog) -> None:
         window = dialog(ThermoHelperState.INVALID_VERSION)
 
         assert not window.open_folder_button.isHidden()
+        assert not window.download_button.isHidden()
+        assert not window.install_zip_button.isHidden()
         assert "helper message" in window.detail_label.text()
+
+    def test_install_from_zip_replaces_an_unusable_installation(
+        self, dialog, qt_application, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        archive_path = tmp_path / "helper.zip"
+        with ZipFile(archive_path, "w") as archive:
+            archive.writestr(WIN_X64_SPECIFICATION.executable_name, b"MZnew-helper")
+        specification = replace(WIN_X64_SPECIFICATION, sha256=hashlib.sha256(archive_path.read_bytes()).hexdigest())
+        data_directory = tmp_path / "appdata"
+        install_directory = managed_thermo_helper_directory(specification, data_directory=data_directory)
+        install_directory.mkdir(parents=True)
+        (install_directory / specification.executable_name).write_bytes(b"MZold-helper")
+        (install_directory / "leftover.txt").write_text("stale", encoding="utf-8")
+        window = dialog(ThermoHelperState.INVALID_VERSION)
+        monkeypatch.setattr(
+            thermo_tool,
+            "install_thermo_helper",
+            partial(install_thermo_helper, data_directory=data_directory, specification=specification),
+        )
+        monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName", lambda *_args: (str(archive_path), ""))
+
+        window.install_zip_button.click()
+        _wait_until(qt_application, lambda: window._wait_dialog is None)
+        _settle(qt_application)
+
+        assert (install_directory / specification.executable_name).read_bytes() == b"MZnew-helper"
+        assert not (install_directory / "leftover.txt").exists()
 
     def test_unsupported_platform_shows_no_install_location(self, dialog, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(environment, "get_platform", lambda: "linux")
@@ -232,8 +273,8 @@ class TestThermoToolDialog:
         calls: list[object] = []
         wait_visible: list[bool] = []
 
-        def install(archive_path: str | None = None) -> Path:
-            calls.append(archive_path)
+        def install(archive_path: str | None = None, *, overwrite: bool) -> Path:
+            calls.append((archive_path, overwrite))
             host_status["status"] = _status(ThermoHelperState.UNLICENSED)
             return Path("helper.exe")
 
@@ -243,14 +284,14 @@ class TestThermoToolDialog:
         wait_visible.append(window._wait_dialog.isVisible() if window._wait_dialog is not None else False)
         _wait_until(qt_application, lambda: window.license_status.text() == "Not accepted")
 
-        assert calls == [None]
+        assert calls == [(None, True)]
         assert wait_visible == [True]
         assert window._wait_dialog is None
 
     def test_wait_dialog_cannot_be_dismissed(self, dialog, qt_application, monkeypatch: pytest.MonkeyPatch) -> None:
         window = dialog(ThermoHelperState.NOT_INSTALLED)
         release = QtCore.QSemaphore(0)
-        monkeypatch.setattr(thermo_tool, "install_thermo_helper", lambda: release.acquire())
+        monkeypatch.setattr(thermo_tool, "install_thermo_helper", lambda **_: release.acquire())
 
         window.download_button.click()
         wait_dialog = window._wait_dialog
@@ -269,8 +310,8 @@ class TestThermoToolDialog:
         window = dialog(ThermoHelperState.NOT_INSTALLED)
         calls: list[object] = []
 
-        def install(archive_path: str) -> Path:
-            calls.append(archive_path)
+        def install(archive_path: str, *, overwrite: bool) -> Path:
+            calls.append((archive_path, overwrite))
             host_status["status"] = _status(ThermoHelperState.UNLICENSED)
             return Path("helper.exe")
 
@@ -280,7 +321,7 @@ class TestThermoToolDialog:
         window.install_zip_button.click()
         _wait_until(qt_application, lambda: window.license_status.text() == "Not accepted")
 
-        assert calls == ["C:/Downloads/helper.zip"]
+        assert calls == [("C:/Downloads/helper.zip", True)]
 
     def test_cancelling_zip_selection_installs_nothing(self, dialog, monkeypatch: pytest.MonkeyPatch) -> None:
         window = dialog(ThermoHelperState.NOT_INSTALLED)
@@ -299,7 +340,7 @@ class TestThermoToolDialog:
         window = dialog(ThermoHelperState.NOT_INSTALLED)
         errors: list[str] = []
 
-        def fail_install() -> Path:
+        def fail_install(**_kwargs: object) -> Path:
             raise ThermoHelperDownloadError("Network or proxy failure.")
 
         monkeypatch.setattr(thermo_tool, "install_thermo_helper", fail_install)
