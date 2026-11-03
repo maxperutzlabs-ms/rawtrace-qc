@@ -244,13 +244,13 @@ def _resolve_inputs(
             if glob.has_magic(os.fspath(input_path)):
                 issue = DiscoveryIssue(
                     input_path,
-                    f"No paths matched input pattern {input_path!r}.",
+                    f"No paths matched input pattern '{input_path}'.",
                     code="pattern_no_matches",
                 )
             else:
                 issue = DiscoveryIssue(
                     input_path,
-                    f"Input path {input_path!r} does not exist.",
+                    f"Input path '{input_path}' does not exist.",
                     code="path_not_found",
                 )
             discoveries.append(_InputDiscovery(input_path, issue=issue))
@@ -497,7 +497,7 @@ def _has_bruker_marker(path: Path) -> tuple[bool, TraversalIssue | None]:
         return False, TraversalIssue(
             path,
             "inaccessible",
-            f"Cannot inspect {path!r} while deciding whether to prune it: "
+            f"Cannot inspect '{path}' while deciding whether to prune it: "
             f"{error.strerror or error}.",
         )
     return False, None
@@ -518,14 +518,14 @@ def _traverse(source: Path, scope: DiscoveryScope) -> TraversalTree:
         except OSError as error:
             if current == source:
                 raise DiscoveryError(
-                    f"Cannot access discovery source {source!r}: "
+                    f"Cannot access discovery source '{source}': "
                     f"{error.strerror or error}."
                 ) from error
             issues.append(
                 TraversalIssue(
                     current,
                     "inaccessible",
-                    f"Cannot access directory {current!r}: {error.strerror or error}.",
+                    f"Cannot access directory '{current}': {error.strerror or error}.",
                 )
             )
             continue
@@ -557,7 +557,7 @@ def _traverse(source: Path, scope: DiscoveryScope) -> TraversalTree:
                     TraversalIssue(
                         entry_path,
                         "inaccessible",
-                        f"Cannot inspect filesystem entry {entry_path!r}: "
+                        f"Cannot inspect filesystem entry '{entry_path}': "
                         f"{error.strerror or error}.",
                     )
                 )
@@ -569,11 +569,11 @@ def _validate_source(source: Path) -> None:
         metadata = os.lstat(source)
     except OSError as error:
         raise DiscoveryError(
-            f"Cannot access discovery source {source!r}: {error.strerror or error}."
+            f"Cannot access discovery source '{source}': {error.strerror or error}."
         ) from error
     if stat.S_ISLNK(metadata.st_mode):
         raise DiscoveryError(
-            f"Discovery source {source!r} is a symlink; provide a real directory."
+            f"Discovery source '{source}' is a symlink; provide a real directory."
         )
     if not stat.S_ISDIR(metadata.st_mode):
-        raise DiscoveryError(f"Discovery source {source!r} is not a directory.")
+        raise DiscoveryError(f"Discovery source '{source}' is not a directory.")
