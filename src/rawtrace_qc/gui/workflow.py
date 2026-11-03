@@ -12,6 +12,7 @@ from rawtrace_qc.discovery import (
     discover,
     validate_path,
 )
+from rawtrace_qc.gui.config import GuiSettings
 from rawtrace_qc.gui.patterns import FilenamePattern, filter_candidates
 
 
@@ -46,7 +47,7 @@ class RawFileSelection:
 
     def __init__(self, options: DiscoveryOptions | None = None) -> None:
         """Create an empty selection using the supplied discovery options."""
-        self.options = options or DiscoveryOptions()
+        self.options = options or GuiSettings().discovery_options()
         self._candidate_entries: tuple[CandidateEntry, ...] = ()
         self._candidate_paths: tuple[DiscoveryCandidate, ...] = ()
         self._patterns: tuple[FilenamePattern, ...] = ()

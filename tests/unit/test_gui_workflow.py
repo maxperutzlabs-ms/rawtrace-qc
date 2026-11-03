@@ -100,6 +100,13 @@ def test_gui_defaults_use_platformdirs_appdata(tmp_path: Path, monkeypatch: pyte
     assert settings.report_directory == appdata / "reports"
 
 
+def test_gui_keeps_its_own_discovery_thresholds() -> None:
+    options = RawFileSelection().options
+
+    assert options.min_size_bytes == 1024 * 1024
+    assert options.min_age_seconds == 120
+
+
 def test_save_settings_creates_the_default_appdata_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     appdata = tmp_path / "appdata"
     monkeypatch.setattr("rawtrace_qc.environment.user_data_dir", lambda **_kwargs: str(appdata))

@@ -22,7 +22,6 @@ from rawtrace_qc.workflows import (
 )
 
 _BYTES_PER_MB = 1024 * 1024
-_DEFAULT_OPTIONS = DiscoveryOptions()
 
 
 def extract(
@@ -36,10 +35,8 @@ def extract(
     msn: Annotated[bool, Parameter(negative_bool=(), show_default=False)] = False,
     min_age_minutes: Annotated[
         float, Parameter(validator=validators.Number(gte=0))
-    ] = _DEFAULT_OPTIONS.min_age_seconds / 60,
-    min_size_mb: Annotated[
-        float, Parameter(validator=validators.Number(gte=0))
-    ] = _DEFAULT_OPTIONS.min_size_bytes / _BYTES_PER_MB,
+    ] = 0,
+    min_size_mb: Annotated[float, Parameter(validator=validators.Number(gte=0))] = 0,
 ) -> int:
     """Extract scan traces from acquisition paths or directories.
 
@@ -54,9 +51,10 @@ def extract(
         precision: Trace precision: `low` (float32) or `high` (float64).
         ms1: Extract only MS1 traces. By default, both MS1 and MSn are extracted.
         msn: Extract only MSn traces. By default, both MS1 and MSn are extracted.
-        min_age_minutes: Skip acquisitions modified more recently than this.
-            `0` turns the check off.
-        min_size_mb: Skip acquisitions smaller than this. `0` turns the check off.
+        min_age_minutes: Skip acquisitions modified less than this many minutes
+            ago. `0` turns the check off.
+        min_size_mb: Skip acquisitions smaller than this many MB. `0` turns the
+            check off.
 
     Returns:
         Exit code zero only when all candidates succeed and there are no

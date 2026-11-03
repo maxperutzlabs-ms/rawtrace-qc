@@ -66,8 +66,8 @@ def discover_inputs(
     Args:
         inputs: Acquisition paths, directories, or glob patterns to resolve.
         options: Discovery configuration. If None (default), uses direct
-            discovery, all built-in vendors, default thresholds, and the system
-            clock.
+            discovery, all built-in vendors, no size or age check, and the
+            system clock.
         registry: Validator registry. If None (default), uses Bruker and Thermo.
 
     Returns:
@@ -134,8 +134,8 @@ def discover(
     Args:
         source: Directory whose children or descendants should be examined.
         options: Discovery configuration. If None (default), uses direct
-            discovery, all built-in vendors, default thresholds, and the system
-            clock.
+            discovery, all built-in vendors, no size or age check, and the
+            system clock.
         registry: Validator registry. If None (default), uses Bruker and Thermo.
 
     Returns:
@@ -186,8 +186,8 @@ def validate_path(
 
     Args:
         path: File or directory to validate.
-        options: Discovery configuration. If None (default), uses the default
-            thresholds and the system clock.
+        options: Discovery configuration. If None (default), applies no size or
+            age check.
         registry: Validator registry. If None (default), uses Bruker and
             Thermo validators.
 
