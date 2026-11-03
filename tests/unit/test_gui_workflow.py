@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from rawtrace_qc.discovery import DiscoveryCandidate, DiscoveryOptions, FileFormat, Vendor
+from rawtrace_qc.discovery import DiscoveryCandidate, DiscoveryOptions, FileFormat, SkipReason, Vendor
 from rawtrace_qc.errors import ConfigurationError
 from rawtrace_qc.gui.config import (
     GuiSettings,
@@ -15,7 +15,7 @@ from rawtrace_qc.gui.config import (
     save_settings,
 )
 from rawtrace_qc.gui.patterns import FilenamePattern, PatternMode, filter_candidates
-from rawtrace_qc.gui.workflow import RawFileSelection
+from rawtrace_qc.gui.workflow import ExclusionReason, FileExclusion, RawFileSelection
 
 
 def _candidate(tmp_path: Path, name: str) -> DiscoveryCandidate:
@@ -131,6 +131,123 @@ def test_selection_validates_paths_and_keeps_unique_active_entries(tmp_path: Pat
     assert second.rejected == ((tmp_path / "invalid.txt").resolve(),)
     assert len(selection.selected) == 1
     assert selection.active_selected() == (first.accepted[0],)
+
+
+def test_selection_add_paths_keeps_the_skip_reason_of_a_recognized_file(tmp_path: Path) -> None:
+    raw = tmp_path / "small.raw"
+    raw.write_bytes(b"raw")
+    selection = RawFileSelection(DiscoveryOptions(min_size_bytes=100, min_age_seconds=0))
+
+    result = selection.add_paths((raw, tmp_path / "invalid.txt"))
+
+    assert result.accepted == ()
+    assert len(result.rejected) == 2
+    assert [skip.path.name for skip in result.skipped] == ["small.raw"]
+    assert result.skipped[0].reason is SkipReason.TOO_SMALL
+
+
+class TestFileExclusion:
+    def _selection(self, tmp_path: Path, *names: str) -> RawFileSelection:
+        selection = RawFileSelection()
+        selection._add_candidates(tuple(_candidate(tmp_path, name) for name in names))
+        return selection
+
+    def test_excluded_file_leaves_the_active_list_and_is_reported_with_its_reason(self, tmp_path: Path) -> None:
+        selection = self._selection(tmp_path, "good.raw", "bad.raw")
+        exclusion = FileExclusion(ExclusionReason.EXTRACTION_FAILED, "unreadable")
+
+        selection.exclude(tmp_path / "bad.raw", exclusion)
+
+        assert [item.path.name for item in selection.active_selected()] == ["good.raw"]
+        assert [item.exclusion for item in selection.excluded_selected()] == [exclusion]
+
+    def test_excluded_file_cannot_be_ticked_again_individually_or_with_check_all(self, tmp_path: Path) -> None:
+        selection = self._selection(tmp_path, "bad.raw")
+        selection.exclude(tmp_path / "bad.raw", FileExclusion(ExclusionReason.PROCESSING_FAILED))
+
+        selection.set_selected_active(tmp_path / "bad.raw", True)
+        selection.set_all_selected_active(True)
+
+        assert selection.active_selected() == ()
+
+    @pytest.mark.parametrize(
+        ("reason", "expected"),
+        [
+            (ExclusionReason.THERMO_NOT_READY, "Thermo Tool button"),
+            (ExclusionReason.EXTRACTION_FAILED, "add it again"),
+            (ExclusionReason.PROCESSING_FAILED, "add it again"),
+        ],
+    )
+    def test_next_step_matches_how_each_reason_can_be_resolved(self, reason: ExclusionReason, expected: str) -> None:
+        assert expected in FileExclusion(reason).next_step
+
+    def test_excluding_a_removed_file_is_ignored(self, tmp_path: Path) -> None:
+        selection = self._selection(tmp_path, "gone.raw")
+        selection.remove_selected((tmp_path / "gone.raw",))
+
+        selection.exclude(tmp_path / "gone.raw", FileExclusion(ExclusionReason.PROCESSING_FAILED))
+
+        assert selection.selected == ()
+
+    def test_removing_and_adding_an_excluded_file_gives_it_a_fresh_start(self, tmp_path: Path) -> None:
+        selection = self._selection(tmp_path, "retry.raw")
+        selection.exclude(tmp_path / "retry.raw", FileExclusion(ExclusionReason.EXTRACTION_FAILED))
+
+        selection.remove_selected((tmp_path / "retry.raw",))
+        selection._add_candidates((_candidate(tmp_path, "retry.raw"),))
+
+        assert [item.path.name for item in selection.active_selected()] == ["retry.raw"]
+
+    def test_unready_thermo_tool_excludes_only_thermo_files_and_counts_them(self, tmp_path: Path) -> None:
+        selection = self._selection(tmp_path, "thermo.raw")
+        bruker = DiscoveryCandidate(tmp_path / "bruker.d", Vendor.BRUKER, FileFormat.D)
+        selection._add_candidates((bruker,))
+
+        changed = selection.set_thermo_ready(False, "not installed")
+
+        assert changed == 1
+        assert selection.active_selected() == (bruker,)
+        excluded = selection.excluded_selected()[0].exclusion
+        assert excluded == FileExclusion(ExclusionReason.THERMO_NOT_READY, "not installed")
+
+    def test_repeated_unready_check_updates_the_detail_without_counting_a_change(self, tmp_path: Path) -> None:
+        selection = self._selection(tmp_path, "thermo.raw")
+        selection.set_thermo_ready(False, "not installed")
+
+        changed = selection.set_thermo_ready(False, "not licensed")
+
+        assert changed == 0
+        assert selection.excluded_selected()[0].exclusion.detail == "not licensed"
+
+    def test_thermo_files_added_while_the_tool_is_not_ready_are_excluded(self, tmp_path: Path) -> None:
+        selection = self._selection(tmp_path)
+        selection.set_thermo_ready(False, "not installed")
+
+        selection._add_candidates((_candidate(tmp_path, "late.raw"),))
+
+        assert selection.active_selected() == ()
+        assert len(selection.excluded_selected()) == 1
+
+    def test_ready_thermo_tool_restores_files_with_their_previous_checkbox_state(self, tmp_path: Path) -> None:
+        selection = self._selection(tmp_path, "ticked.raw", "unticked.raw")
+        selection.set_selected_active(tmp_path / "unticked.raw", False)
+        selection.set_thermo_ready(False, "not installed")
+
+        changed = selection.set_thermo_ready(True)
+
+        assert changed == 2
+        assert [item.path.name for item in selection.active_selected()] == ["ticked.raw"]
+        assert selection.excluded_selected() == ()
+
+    def test_ready_thermo_tool_keeps_files_excluded_for_other_reasons(self, tmp_path: Path) -> None:
+        selection = self._selection(tmp_path, "bad.raw")
+        selection.exclude(tmp_path / "bad.raw", FileExclusion(ExclusionReason.EXTRACTION_FAILED, "unreadable"))
+
+        changed_unready = selection.set_thermo_ready(False, "not installed")
+        changed_ready = selection.set_thermo_ready(True)
+
+        assert (changed_unready, changed_ready) == (0, 0)
+        assert selection.excluded_selected()[0].exclusion.reason is ExclusionReason.EXTRACTION_FAILED
 
 
 def test_selection_accepts_zero_age_files_when_clock_lags_file_mtime(tmp_path: Path) -> None:

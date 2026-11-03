@@ -149,6 +149,7 @@ class TestThermoToolText:
 
         assert "Thermo Tool" in message
         assert "--agree-to-terms" not in message
+        assert "untick" not in message
 
 
 class TestThermoAssetLabel:
@@ -465,7 +466,8 @@ class TestGenerateWithThermoFiles:
             DiscoveryCandidate(tmp_path / f"sample-{index}", vendor, formats[vendor])
             for index, vendor in enumerate(vendors)
         )
-        monkeypatch.setattr(window._selection, "active_selected", lambda: candidates)
+        window._selection._add_candidates(candidates)
+        window._refresh_selected()
         return window
 
     @pytest.fixture
@@ -514,16 +516,31 @@ class TestGenerateWithThermoFiles:
         assert window._worker is None
         window.close()
 
-    def test_blocks_mixed_batch_when_tool_is_not_ready(
+    def test_mixed_batch_excludes_thermo_files_and_reports_the_rest_when_tool_is_not_ready(
         self, tmp_path: Path, qt_application, host_status, reports, prompts, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         window = self._window_with_candidates(tmp_path, monkeypatch, Vendor.BRUKER, Vendor.THERMO)
 
         window._generate()
-        _settle(qt_application)
+        _wait_until(qt_application, lambda: window._worker is None and bool(reports))
 
-        assert reports == []
-        assert len(prompts) == 1
+        assert [candidate.vendor for candidate in reports[0]] == [Vendor.BRUKER]
+        assert [entry.candidate.vendor for entry in window._selection.excluded_selected()] == [Vendor.THERMO]
+        assert prompts == []
+        window.close()
+
+    def test_excluded_thermo_files_return_when_generate_finds_the_tool_ready(
+        self, tmp_path: Path, qt_application, host_status, reports, prompts, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        window = self._window_with_candidates(tmp_path, monkeypatch, Vendor.THERMO)
+        window._selection.set_thermo_ready(False, "not installed")
+        host_status["status"] = _status(ThermoHelperState.READY)
+
+        window._generate()
+        _wait_until(qt_application, lambda: window._worker is None and bool(reports))
+
+        assert len(reports[0]) == 1
+        assert window._selection.excluded_selected() == ()
         window.close()
 
     def test_generates_report_when_tool_is_ready(

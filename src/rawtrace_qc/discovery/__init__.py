@@ -5,6 +5,7 @@ from __future__ import annotations
 from rawtrace_qc.discovery.discover import (
     discover,
     discover_inputs,
+    inspect_path,
     resolve_input_path_pattern,
     validate_path,
 )
@@ -44,6 +45,7 @@ __all__ = [
     "Vendor",
     "discover",
     "discover_inputs",
+    "inspect_path",
     "resolve_input_path_pattern",
     "validate_bruker",
     "validate_path",

@@ -3,18 +3,35 @@
 from __future__ import annotations
 
 import os
+import threading
+import time
+from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from rawtrace_qc.discovery import DiscoveryCandidate, FileFormat, Vendor
+from rawtrace_qc.errors import OperationCancelledError
 from rawtrace_qc.gui.app import _dialog_start_directory, _load_qt, create_window
 from rawtrace_qc.gui.config import load_settings
 from rawtrace_qc.gui.patterns import FilenamePattern, PatternMode
+from rawtrace_qc.gui.reporting import ExcludedFile, ReportGenerationResult, ReportProgress, ReportStage
 from rawtrace_qc.gui.theme import DARK_THEME, get_active_theme
+from rawtrace_qc.gui.workflow import ExclusionReason, FileExclusion
+from rawtrace_qc.thermo import ThermoHelperState, ThermoHelperStatus
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 QtCore = pytest.importorskip("PySide6.QtCore")
 QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+
+
+def _wait_until(application, condition: Callable[[], bool]) -> None:
+    deadline = time.monotonic() + 5
+    while not condition():
+        assert time.monotonic() < deadline, "Timed out waiting for the GUI."
+        application.processEvents()
+        time.sleep(0.005)
+    application.processEvents()
 
 
 @pytest.fixture(scope="module")
@@ -278,6 +295,331 @@ class TestSettingsDialog:
         assert result["saved_theme_mode"] == "dark"
         assert result["dialog_closed"] is True
         window.close()
+
+
+class TestReportStatusAndExclusions:
+    @pytest.fixture
+    def window(self, tmp_path: Path, qt_application):
+        qt_core, qt_gui, qt_widgets = _load_qt()
+        window = create_window(qt_core, qt_gui, qt_widgets, tmp_path / "settings.json")
+        yield window
+        _wait_until(qt_application, lambda: window._worker is None and window._scan_task is None)
+        window.close()
+
+    @pytest.fixture
+    def browser(self, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+        opened: list[str] = []
+        monkeypatch.setattr("rawtrace_qc.gui.app.webbrowser.open", opened.append)
+        return opened
+
+    def _add_bruker_files(self, window, tmp_path: Path, *names: str) -> tuple[DiscoveryCandidate, ...]:
+        candidates = tuple(DiscoveryCandidate(tmp_path / name, Vendor.BRUKER, FileFormat.D) for name in names)
+        window._selection._add_candidates(candidates)
+        window._refresh_selected()
+        return candidates
+
+    def _patch_generate(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *bad: str) -> None:
+        def fake_generate(candidates, *_args, on_excluded, **_kwargs) -> ReportGenerationResult:
+            excluded = []
+            for candidate in candidates:
+                if candidate.path.name in bad:
+                    file = ExcludedFile(candidate, FileExclusion(ExclusionReason.EXTRACTION_FAILED, "unreadable"))
+                    on_excluded(file)
+                    excluded.append(file)
+            included = tuple(candidate for candidate in candidates if candidate.path.name not in bad)
+            return ReportGenerationResult(tmp_path / "report.html", 1, 0, included, tuple(excluded))
+
+        monkeypatch.setattr("rawtrace_qc.gui.app.generate_report", fake_generate)
+
+    def _generate_and_wait(self, window, qt_application) -> None:
+        window._generate()
+        _wait_until(qt_application, lambda: window._worker is None)
+        qt_application.processEvents()
+
+    def test_report_ready_status_appears_and_browser_opens(
+        self, window, tmp_path: Path, qt_application, browser, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._add_bruker_files(window, tmp_path, "a.d", "b.d")
+        self._patch_generate(monkeypatch, tmp_path)
+
+        self._generate_and_wait(window, qt_application)
+
+        assert window.report_status.full_text() == "Report ready: 2 file(s)"
+        assert window.report_status.property("state") == "ok"
+        assert len(browser) == 1
+        assert not window.open_report_button.isHidden()
+        assert window.cancel_button.isHidden()
+        assert window.generate_button.isEnabled()
+
+    def test_failed_file_is_marked_unchecked_and_cannot_be_ticked_again(
+        self, window, tmp_path: Path, qt_application, browser, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._add_bruker_files(window, tmp_path, "good.d", "bad.d")
+        self._patch_generate(monkeypatch, tmp_path, "bad.d")
+
+        self._generate_and_wait(window, qt_application)
+        window._set_all_selected(True)
+
+        item = window.selected_list.item(1)
+        assert not item.flags() & QtCore.Qt.ItemFlag.ItemIsUserCheckable
+        assert item.data(QtCore.Qt.ItemDataRole.UserRole.value + 1) == "Extraction failed"
+        assert "unreadable" in item.toolTip()
+        assert "add it again" in item.toolTip()
+        assert [entry.path.name for entry in window._selection.active_selected()] == ["good.d"]
+        assert window.selected_count.text() == "1 of 2 checked"
+        assert window.excluded_count.text() == "1 of 2 excluded"
+        assert not window.excluded_count.isHidden()
+        assert window.report_status.full_text() == "Report ready: 1 file(s), 1 excluded"
+        assert window.report_status.property("state") == "warning"
+        assert "Excluded bad.d (Extraction failed): unreadable" in window.log_view.toPlainText()
+
+    def test_long_file_name_does_not_push_rows_wider_than_the_list(
+        self, window, tmp_path: Path, qt_application
+    ) -> None:
+        self._add_bruker_files(window, tmp_path, "long-name-" * 60 + ".d")
+        window.show()
+        qt_application.processEvents()
+
+        row_width = window.selected_list.visualItemRect(window.selected_list.item(0)).width()
+
+        assert row_width <= window.selected_list.viewport().width()
+
+    def test_changing_the_selection_marks_the_report_stale_and_undoing_it_restores_ready(
+        self, window, tmp_path: Path, qt_application, browser, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._add_bruker_files(window, tmp_path, "a.d", "b.d")
+        self._patch_generate(monkeypatch, tmp_path)
+        self._generate_and_wait(window, qt_application)
+
+        window.selected_list.item(1).setCheckState(QtCore.Qt.CheckState.Unchecked)
+        stale_text = window.report_status.full_text()
+        stale_button = window.open_report_button.text()
+        window.selected_list.item(1).setCheckState(QtCore.Qt.CheckState.Checked)
+
+        assert stale_text == "Selection changed since the last report"
+        assert stale_button == "Open last report"
+        assert window.report_status.full_text() == "Report ready: 2 file(s)"
+        assert window.open_report_button.text() == "Open report"
+
+    def test_selection_change_during_a_run_makes_the_finished_report_stale(
+        self, window, tmp_path: Path, qt_application, browser, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._add_bruker_files(window, tmp_path, "a.d", "b.d")
+        release = threading.Event()
+
+        def slow_generate(candidates, *_args, **_kwargs) -> ReportGenerationResult:
+            release.wait(5)
+            return ReportGenerationResult(tmp_path / "report.html", 1, 0, candidates)
+
+        monkeypatch.setattr("rawtrace_qc.gui.app.generate_report", slow_generate)
+
+        window._generate()
+        window.selected_list.item(1).setCheckState(QtCore.Qt.CheckState.Unchecked)
+        release.set()
+        _wait_until(qt_application, lambda: window._worker is None)
+
+        assert window.report_status.full_text() == "Selection changed since the last report"
+
+    def test_failure_with_a_very_long_message_keeps_the_status_short_and_the_window_narrow(
+        self, window, qt_application
+    ) -> None:
+        width_before = window.minimumSizeHint().width()
+        message = "Could not run C:\\tools\\" + "very-long-folder\\" * 100
+
+        window._report_failed(message)
+
+        assert window.report_status.full_text() == "Report failed (see log)"
+        assert window.report_status.property("state") == "error"
+        assert message in window.log_view.toPlainText()
+        assert window.minimumSizeHint().width() == width_before
+
+    def test_failure_message_clears_when_all_failed_files_are_removed(self, window, tmp_path: Path) -> None:
+        candidates = self._add_bruker_files(window, tmp_path, "a.d")
+        window._selection.exclude(candidates[0].path, FileExclusion(ExclusionReason.EXTRACTION_FAILED, "unreadable"))
+        window._report_failed("nothing usable")
+        failed_text = window.report_status.full_text()
+
+        window._selection.remove_selected((candidates[0].path,))
+        window._refresh_selected()
+
+        assert failed_text == "Report failed (see log)"
+        assert window.report_status.full_text() == "No files checked"
+
+    def test_status_says_files_are_unusable_when_every_file_is_excluded(self, window, tmp_path: Path) -> None:
+        candidates = self._add_bruker_files(window, tmp_path, "a.d", "b.d")
+        for candidate in candidates:
+            window._selection.exclude(candidate.path, FileExclusion(ExclusionReason.EXTRACTION_FAILED, "unreadable"))
+
+        window._refresh_selected()
+        window._generate()
+
+        assert window.report_status.full_text() == "No usable files: 2 excluded"
+        assert "Report not started: No usable files: 2 excluded" in window.log_view.toPlainText()
+
+    def test_status_says_no_files_checked_when_usable_files_are_unticked(self, window, tmp_path: Path) -> None:
+        candidates = self._add_bruker_files(window, tmp_path, "a.d", "b.d")
+        window._selection.exclude(candidates[0].path, FileExclusion(ExclusionReason.EXTRACTION_FAILED, "unreadable"))
+        window._selection.set_selected_active(candidates[1].path, False)
+
+        window._refresh_selected()
+
+        assert window.report_status.full_text() == "No files checked"
+
+    def test_thermo_files_added_while_the_tool_is_not_ready_are_logged_with_the_next_step(
+        self, window, tmp_path: Path
+    ) -> None:
+        raw = tmp_path / "late.raw"
+        raw.write_bytes(b"x" * (2 * 1024 * 1024))
+        os.utime(raw, (0, 0))
+        window._set_thermo_status(ThermoHelperStatus(ThermoHelperState.NOT_INSTALLED, None, None, False, "missing"))
+
+        window._add_paths((raw,))
+
+        log = window.log_view.toPlainText()
+        assert "Thermo tool not ready: 1 added file(s) excluded" in log
+        assert "Thermo Tool button" in log
+        assert "Thermo Tool button" in window.selected_list.item(0).toolTip()
+
+    def test_default_window_height_fits_the_screen(self, window) -> None:
+        assert window.height() <= window.screen().availableGeometry().height()
+
+    def test_failure_message_clears_when_the_selection_changes(self, window, tmp_path: Path) -> None:
+        window._report_failed("broken")
+
+        self._add_bruker_files(window, tmp_path, "a.d")
+
+        assert window.report_status.full_text() == "1 file(s) ready for a report"
+
+    def test_status_label_shortens_long_text_and_keeps_it_in_the_tooltip(self, window) -> None:
+        window.report_status.resize(120, 30)
+        text = "Extracting 3 of 12: " + "long-name-" * 30
+
+        window.report_status.set_full_text(text)
+
+        assert len(window.report_status.text()) < len(text)
+        assert window.report_status.toolTip() == text
+
+    def test_cancel_stops_the_run_without_excluding_files_or_opening_a_report(
+        self, window, tmp_path: Path, qt_application, browser, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._add_bruker_files(window, tmp_path, "a.d")
+        started = threading.Event()
+
+        def cancellable_generate(*_args, cancel, **_kwargs) -> ReportGenerationResult:
+            started.set()
+            cancel.wait(5)
+            raise OperationCancelledError("stopped")
+
+        monkeypatch.setattr("rawtrace_qc.gui.app.generate_report", cancellable_generate)
+
+        window._generate()
+        visible_during_run = not window.cancel_button.isHidden()
+        assert started.wait(5)
+        window.cancel_button.click()
+        cancelling_text = window.report_status.full_text()
+        _wait_until(qt_application, lambda: window._worker is None)
+
+        assert visible_during_run
+        assert cancelling_text == "Cancelling..."
+        assert window.report_status.full_text() == "Report cancelled"
+        assert window.cancel_button.isHidden()
+        assert window.generate_button.isEnabled()
+        assert window._selection.excluded_selected() == ()
+        assert browser == []
+
+    def test_generate_without_checked_files_logs_the_reason_and_starts_nothing(self, window) -> None:
+        window._generate()
+
+        assert window._worker is None
+        assert "Report not started: No files checked" in window.log_view.toPlainText()
+        assert window.report_status.full_text() == "No files checked"
+
+    def test_progress_updates_the_status_and_logs_each_extraction_but_only_the_start_of_other_stages(
+        self, window, tmp_path: Path, qt_application, browser, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._add_bruker_files(window, tmp_path, "a.d")
+        window._worker = SimpleNamespace(cancel=threading.Event())
+
+        window._report_progress(ReportProgress(ReportStage.EXTRACTING, 1, 2, "a.d"))
+        window._report_progress(ReportProgress(ReportStage.EXTRACTING, 2, 2, "b.d"))
+        window._report_progress(ReportProgress(ReportStage.PROCESSING, 1, 2, "a.d"))
+        window._report_progress(ReportProgress(ReportStage.PROCESSING, 2, 2, "b.d"))
+        status = window.report_status.full_text()
+        window._worker = None
+        log = window.log_view.toPlainText()
+
+        assert status == "Processing traces 2 of 2"
+        assert "Extracting 1 of 2: a.d" in log
+        assert "Extracting 2 of 2: b.d" in log
+        assert "Processing traces 1 of 2" in log
+        assert "Processing traces 2 of 2" not in log
+
+    def test_thermo_status_excludes_and_restores_files_in_the_list_and_log(self, window, tmp_path: Path) -> None:
+        window._selection._add_candidates((DiscoveryCandidate(tmp_path / "t.raw", Vendor.THERMO, FileFormat.RAW),))
+
+        window._set_thermo_status(ThermoHelperStatus(ThermoHelperState.NOT_INSTALLED, None, None, False, "missing"))
+        excluded_text = window.excluded_count.text()
+        reason = window.selected_list.item(0).data(QtCore.Qt.ItemDataRole.UserRole.value + 1)
+        window._set_thermo_status(ThermoHelperStatus(ThermoHelperState.READY, Path("helper.exe"), "1", True, "ready"))
+
+        assert excluded_text == "1 of 1 excluded"
+        assert reason == "Thermo tool not ready"
+        assert window.excluded_count.isHidden()
+        assert window.selected_list.item(0).flags() & QtCore.Qt.ItemFlag.ItemIsUserCheckable
+        log = window.log_view.toPlainText()
+        assert "Thermo tool not ready: 1 file(s) excluded" in log
+        assert "Thermo tool ready: 1 file(s) restored" in log
+
+    def test_scan_runs_in_the_background_and_logs_skipped_files_and_the_summary(
+        self, window, tmp_path: Path, qt_application
+    ) -> None:
+        source = tmp_path / "source"
+        source.mkdir()
+        (source / "small.raw").write_bytes(b"raw")
+        window.source_edit.setText(str(source))
+
+        window._scan_source()
+        disabled_during_scan = not window.scan_button.isEnabled()
+        _wait_until(qt_application, lambda: window._scan_task is None)
+
+        log = window.log_view.toPlainText()
+        assert disabled_during_scan
+        assert window.scan_button.isEnabled()
+        assert "Skipped small.raw:" in log
+        assert "Scan finished: 0 valid file(s), 1 skipped, 0 issue(s)" in log
+
+    def test_failed_scan_is_logged_and_the_buttons_return(self, window, tmp_path: Path, qt_application) -> None:
+        window.source_edit.setText(str(tmp_path / "missing"))
+
+        window._scan_source()
+        _wait_until(qt_application, lambda: window._scan_task is None)
+
+        assert "Scan failed:" in window.log_view.toPlainText()
+        assert window.scan_button.isEnabled()
+        assert window.choose_source_button.isEnabled()
+
+    def test_adding_paths_logs_why_each_path_was_rejected(self, window, tmp_path: Path) -> None:
+        small = tmp_path / "small.raw"
+        small.write_bytes(b"raw")
+        other = tmp_path / "notes.txt"
+        other.write_text("notes")
+
+        window._add_paths((small, other))
+
+        log = window.log_view.toPlainText()
+        assert "Rejected small.raw:" in log
+        assert f"Rejected {other.resolve()}: not a supported" in log
+
+    def test_log_window_shows_the_history_and_receives_new_lines(self, window) -> None:
+        window._log("first line")
+
+        window._open_log()
+        window._log("second line")
+        text = window._log_view_large.toPlainText()
+        window._log_dialog.close()
+
+        assert "first line" in text
+        assert "second line" in text
 
 
 class TestSystemThemeListener:

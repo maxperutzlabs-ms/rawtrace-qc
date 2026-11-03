@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tempfile
+import threading
 from pathlib import Path
 
 from rawtrace_qc.errors import (
@@ -44,6 +45,7 @@ class ThermoExtractor:
         data_directory: Path | str | None = None,
         specification: ThermoHelperSpecification | None = None,
         timeout: float = 600.0,
+        cancel: threading.Event | None = None,
     ) -> None:
         """Initialize a ThermoExtractor instance.
 
@@ -56,6 +58,9 @@ class ThermoExtractor:
                 resolve the specification for the current host runtime when
                 extracting.
             timeout: Process execution timeout in seconds. Defaults to 600.0.
+            cancel: Optional event that stops a running extraction when set from
+                another thread, raising `OperationCancelledError`. Defaults to
+                None.
         """
         self._helper_path = Path(helper_path) if helper_path is not None else None
         self._data_directory = (
@@ -63,6 +68,7 @@ class ThermoExtractor:
         )
         self._specification = specification
         self._timeout = timeout
+        self._cancel = cancel
 
     def extract(
         self,
@@ -106,6 +112,7 @@ class ThermoExtractor:
             ExtractionError: If the file cannot be read, reading times out, or a
                 single-level selection has no scans of that level.
             ArtifactValidationError: If the produced trace files fail validation.
+            OperationCancelledError: If the `cancel` event was set while extracting.
         """
         resolved_input = validate_extraction_options(
             input_path,
@@ -153,7 +160,9 @@ class ThermoExtractor:
                     select_msn=select_msn,
                 )
                 try:
-                    run_thermo_helper(command, timeout=self._timeout)
+                    run_thermo_helper(
+                        command, timeout=self._timeout, cancel=self._cancel
+                    )
                 except ThermoHelperCommandError as error:
                     if error.returncode in _HELPER_SETUP_EXIT_CODES:
                         raise

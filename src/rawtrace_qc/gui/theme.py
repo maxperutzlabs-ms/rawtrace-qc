@@ -65,6 +65,7 @@ class Theme:
     destructive_button_border: str = "#E3B3B0"
     destructive_button_text: str = "#B3261E"
     destructive_button_hover: str = "#FDF2F2"
+    status_warning_text: str = "#8A5300"
     button_disabled_background: str = "#F3F8FA"
     button_disabled_border: str = "#D5E1E6"
     button_disabled_text: str = "#5A7483"
@@ -167,6 +168,7 @@ DARK_THEME = Theme(
     destructive_button_border="#7d3532",
     destructive_button_text="#f87171",
     destructive_button_hover="#3b1d1d",
+    status_warning_text="#e3b341",
     button_disabled_background="#1e242c",
     button_disabled_border="#30363d",
     button_disabled_text="#656f7d",
@@ -386,6 +388,21 @@ QLabel#statusLabel {
     font-size: 13.5px;
     border: 0;
 }
+QLabel#statusLabel[state="ok"] {
+    color: $count_pill_text;
+    font-weight: 600;
+}
+QLabel#statusLabel[state="warning"] {
+    color: $status_warning_text;
+    font-weight: 600;
+}
+QLabel#statusLabel[state="error"] {
+    color: $destructive_button_text;
+    font-weight: 600;
+}
+QPlainTextEdit#activityLog {
+    font-size: 12.5px;
+}
 QFrame#header {
     background: $header_background;
     color: $header_title;
@@ -423,6 +440,15 @@ QLabel#count, QLabel#subheading {
 QLabel#countPill {
     background: $count_pill_background;
     color: $count_pill_text;
+    border: 0;
+    border-radius: 999px;
+    padding: 2px 10px;
+    font-size: 12.5px;
+    font-weight: 600;
+}
+QLabel#excludedPill {
+    background: $destructive_button_hover;
+    color: $destructive_button_text;
     border: 0;
     border-radius: 999px;
     padding: 2px 10px;
@@ -745,6 +771,9 @@ QScrollBar::add-line, QScrollBar::sub-line {
     background: $scrollbar_background;
     color: $text_primary;
     border: 0;
+}
+QScrollBar::add-page, QScrollBar::sub-page {
+    background: $scrollbar_background;
 }
 QSplitter::handle {
     background: $splitter_handle;

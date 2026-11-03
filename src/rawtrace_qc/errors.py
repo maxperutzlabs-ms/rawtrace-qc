@@ -37,6 +37,10 @@ class ExtractionError(RawtraceError):
         super().__init__(message)
 
 
+class OperationCancelledError(RawtraceError):
+    """Raise when the caller cancels a running extraction or report."""
+
+
 class ThermoHelperError(RawtraceError):
     """Base class for ThermoScanHeaderExtractor helper errors."""
 

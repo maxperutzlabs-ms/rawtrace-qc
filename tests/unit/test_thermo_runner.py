@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
 from rawtrace_qc.errors import (
+    OperationCancelledError,
     ThermoHelperCommandError,
     ThermoHelperExecutableNotFoundError,
     ThermoHelperOutputError,
@@ -118,6 +121,38 @@ class TestRunThermoHelper:
 
         assert error.value.stdout.splitlines() == ["mock helper stdout"]
         assert error.value.stderr.splitlines() == ["mock helper stderr"]
+        assert "0.5-second timeout" in str(error.value)
+
+    def test_cancel_event_stops_the_running_mock_helper_process(self) -> None:
+        cancel = threading.Event()
+        timer = threading.Timer(0.2, cancel.set)
+        timer.start()
+        started = time.monotonic()
+
+        with pytest.raises(OperationCancelledError):
+            run_thermo_helper(_mock_helper_command("timeout"), timeout=25.0, cancel=cancel)
+
+        timer.join()
+        assert time.monotonic() - started < 20
+
+    def test_captures_output_when_a_cancel_event_is_never_set(self) -> None:
+        result = run_thermo_helper(_mock_helper_command("success"), timeout=5.0, cancel=threading.Event())
+
+        assert result.returncode == 0
+        assert result.stdout.splitlines() == ["mock helper stdout"]
+        assert result.stderr.splitlines() == ["mock helper stderr"]
+
+    def test_raises_command_error_when_a_cancel_event_is_never_set(self) -> None:
+        with pytest.raises(ThermoHelperCommandError) as error:
+            run_thermo_helper(_mock_helper_command("failure"), timeout=5.0, cancel=threading.Event())
+
+        assert error.value.returncode == 7
+
+    def test_raises_timeout_with_partial_output_when_a_cancel_event_is_never_set(self) -> None:
+        with pytest.raises(ThermoHelperTimeoutError) as error:
+            run_thermo_helper(_mock_helper_command("timeout"), timeout=0.5, cancel=threading.Event())
+
+        assert error.value.stdout.splitlines() == ["mock helper stdout"]
         assert "0.5-second timeout" in str(error.value)
 
     def test_translates_nonzero_exit_from_mocked_process(self, monkeypatch: pytest.MonkeyPatch) -> None:

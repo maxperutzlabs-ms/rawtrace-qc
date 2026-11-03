@@ -93,7 +93,7 @@ An application should treat discovery as an input-review step before extraction 
 
 The application should not walk raw-file directories itself, inspect vendor-specific member files, or infer validity from filename suffixes. Those rules belong to the discovery service so that the command-line interface, GUI, and other library consumers behave consistently.
 
-For a single file or acquisition folder supplied by a file dialog or drag and drop, use `validate_path(path, options)`. It applies the same built-in validators and thresholds as `discover()` and returns one `DiscoveryCandidate` or `None` without traversing the parent directory.
+For a single file or acquisition folder supplied by a file dialog or drag and drop, use `validate_path(path, options)`. It applies the same built-in validators and thresholds as `discover()` and returns one `DiscoveryCandidate` or `None` without traversing the parent directory. Use `inspect_path(path, options)` to also get the `SkippedAcquisition`, and with it the reason, when a recognized acquisition is not accepted.
 
 ## Scan-Trace Extraction
 
@@ -415,13 +415,17 @@ Choose a source folder and scan either direct children or descendants. Selecting
 
 The selected raw-file list keeps unique resolved paths, supports multi-selection removal, select-all/select-none controls, drag and drop, and file or folder dialogs. Each selected path has an active checkbox, and only active paths participate in report generation.
 
+A file that cannot be used is marked with a red cross and a reason, such as `Extraction failed`, `Processing failed` or `Thermo tool not ready`. It can no longer be ticked and the report continues without it, so a report can contain fewer files than were selected. The tooltip of the file shows the underlying message and what to do, and the log records the message. To retry a file, remove it from the list and add it again. Files excluded because the Thermo tool is not ready return automatically once it is ready.
+
+The status line next to the Generate report button shows the current report state: the file being extracted, the following stages, and the result. It tells you when the selection no longer matches the last report. The Cancel button stops the run immediately while a Thermo file is being extracted; other work stops at the next file, and finished extractions stay in the cache. The log area below keeps a history of what happened during the session. It is not saved to a file. Open log shows it in a larger window. Folder scans run in the background and report their result in the log, including why files were skipped.
+
 GUI settings are stored as JSON in the platform user configuration directory. They include discovery thresholds in megabytes and minutes, with defaults of 1 MB and 2 minutes (converted internally to bytes and seconds for discovery), recursive/direct scope, preconfigured patterns, the trace-cache directory, and the permanent-report directory. Trace cache keys include source metadata, the vendor, extractor type, precision, and selected MS levels; each key uses the first 16 hexadecimal characters of its SHA-256 digest. Cached artifacts use short filenames (`trace.ms1-trace.parquet` and `trace.msn-trace.parquet`), while their metadata retains the original raw filename. Invalid or incomplete Parquet cache entries are rebuilt through the extractor and validated before use.
 
 Reports can be temporary, in which case the GUI owns their temporary directories until it closes, or permanent, in which case the selected report directory is used. The default report uses embedded Plotly assets and can be opened immediately in the default browser.
 
 Thermo GUI reports use the same `ThermoExtractor` as the CLI, together with the GUI's trace cache. The tool button in the window header opens the Thermo Tool window, which shows the required helper version, whether it is installed, and whether its license is accepted. A dot on the button means the helper still needs setup. From the window you can download the pinned release or install it from a manually downloaded ZIP, which must be the exact archive named in the window, and show or accept the license. Accepting records acceptance for your user account and then displays the terms, so use Show license first to read them.
 
-The GUI always uses the managed helper installation; helpers at other paths are only available through the CLI and library. While the helper is not ready, a report with active Thermo files is not generated, even if their traces are cached. A popup explains this and offers to open the Thermo Tool window. Untick the Thermo files to generate a report without them.
+The GUI always uses the managed helper installation; helpers at other paths are only available through the CLI and library. While the helper is not ready, all selected Thermo files are excluded, even if their traces are cached, and a report is generated from the remaining files. If no other files remain, a popup explains this and offers to open the Thermo Tool window.
 
 ## Developer Guide
 

@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import subprocess
+import threading
+import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from rawtrace_qc.errors import (
+    OperationCancelledError,
     ThermoHelperCommandError,
     ThermoHelperExecutableNotFoundError,
     ThermoHelperExecutionError,
@@ -19,6 +22,7 @@ if TYPE_CHECKING:
     from rawtrace_qc.extractors.protocol import PrecisionMode
 
 _DEFAULT_TIMEOUT = 600.0
+_CANCEL_POLL_SECONDS = 0.1
 
 
 def build_thermo_helper_command(
@@ -73,7 +77,10 @@ def build_thermo_helper_command(
 
 
 def run_thermo_helper(
-    command: Sequence[str | Path], *, timeout: float = _DEFAULT_TIMEOUT
+    command: Sequence[str | Path],
+    *,
+    timeout: float = _DEFAULT_TIMEOUT,
+    cancel: threading.Event | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Execute a helper command and return its captured text output.
 
@@ -84,6 +91,8 @@ def run_thermo_helper(
         command: Argument sequence produced by
             `build_thermo_helper_command`.
         timeout: Maximum process duration in seconds. Defaults to 600.0.
+        cancel: Optional event that stops the helper process when set from
+            another thread. Defaults to None.
 
     Returns:
         A completed process containing decoded standard output and error.
@@ -98,6 +107,7 @@ def run_thermo_helper(
         ThermoHelperTimeoutError: If the process exceeds `timeout`.
         ThermoHelperExecutionError: If another operating-system error prevents
             process execution.
+        OperationCancelledError: If `cancel` was set while the helper was running.
     """
     if isinstance(command, str):
         raise TypeError("command must be a sequence of arguments, not a string.")
@@ -108,7 +118,13 @@ def run_thermo_helper(
         raise ValueError(f"timeout must be greater than zero, got {timeout!r}.")
 
     try:
-        result = _execute_process(command_arguments, timeout=timeout)
+        result = (
+            _execute_process(command_arguments, timeout=timeout)
+            if cancel is None
+            else _execute_cancellable_process(
+                command_arguments, timeout=timeout, cancel=cancel
+            )
+        )
     except subprocess.TimeoutExpired as error:
         raise ThermoHelperTimeoutError(
             f"ThermoScanHeaderExtractor command {command_arguments!r} exceeded "
@@ -168,6 +184,36 @@ def _execute_process(
         timeout=timeout,
         check=False,
     )
+
+
+def _execute_cancellable_process(
+    command: Sequence[str], *, timeout: float, cancel: threading.Event
+) -> subprocess.CompletedProcess[bytes]:
+    deadline = time.monotonic() + timeout
+    with subprocess.Popen(
+        command, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    ) as process:
+        while True:
+            try:
+                stdout, stderr = process.communicate(timeout=_CANCEL_POLL_SECONDS)
+            except subprocess.TimeoutExpired:
+                if cancel.is_set():
+                    process.kill()
+                    process.communicate()
+                    raise OperationCancelledError(
+                        "The Thermo helper was stopped because the operation "
+                        "was cancelled."
+                    ) from None
+                if time.monotonic() >= deadline:
+                    process.kill()
+                    stdout, stderr = process.communicate()
+                    raise subprocess.TimeoutExpired(
+                        command, timeout, output=stdout, stderr=stderr
+                    ) from None
+            else:
+                return subprocess.CompletedProcess(
+                    command, process.returncode, stdout, stderr
+                )
 
 
 def _decode_output(output: bytes | str | None, *, errors: str = "strict") -> str:

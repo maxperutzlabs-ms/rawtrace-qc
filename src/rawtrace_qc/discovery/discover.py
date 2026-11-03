@@ -195,7 +195,51 @@ def validate_path(
         A valid acquisition candidate, or `None` when the path is not a
         supported complete acquisition.
     """
-    return _inspect_path(path, options, registry)[0]
+    return inspect_path(path, options, registry)[0]
+
+
+def inspect_path(
+    path: Path,
+    options: DiscoveryOptions | None = None,
+    registry: DiscoveryRegistry | None = None,
+) -> tuple[DiscoveryCandidate | None, SkippedAcquisition | None]:
+    """Validate one path and keep the reason when it is skipped.
+
+    Use this instead of `validate_path()` to tell the user why a path was not
+    accepted.
+
+    Args:
+        path: File or directory to validate.
+        options: Discovery configuration. If None (default), applies no size or
+            age check.
+        registry: Validator registry. If None (default), uses Bruker and
+            Thermo validators.
+
+    Returns:
+        The candidate for an accepted path, the skipped entry for a recognized
+        but rejected path, or neither for an unsupported path. A candidate takes
+        precedence when validators disagree.
+    """
+    selected = options or DiscoveryOptions()
+    normalized_path = Path(path).expanduser().absolute()
+    try:
+        metadata = os.lstat(normalized_path)
+    except OSError:
+        return None, None
+    if stat.S_ISLNK(metadata.st_mode):
+        return None, None
+
+    if stat.S_ISREG(metadata.st_mode):
+        tree = TraversalTree(files=(normalized_path,))
+    elif stat.S_ISDIR(metadata.st_mode):
+        tree = TraversalTree(directories=(normalized_path,))
+    else:
+        return None, None
+
+    candidates, skips = _validate_tree(tree, selected, registry)
+    if candidates:
+        return candidates[0], None
+    return None, skips[0] if skips else None
 
 
 @dataclass
@@ -257,7 +301,7 @@ def _resolve_inputs(
             continue
 
         path_discoveries = [
-            _PathDiscovery(input_path, path, *_inspect_path(path, options, registry))
+            _PathDiscovery(input_path, path, *inspect_path(path, options, registry))
             for path in resolved_paths
         ]
         discoveries.append(_InputDiscovery(input_path, path_discoveries))
@@ -402,45 +446,6 @@ def _no_candidates_issue(input_discovery: _InputDiscovery) -> DiscoveryIssue | N
         "No supported complete acquisitions were found.",
         code="no_candidates",
     )
-
-
-def _inspect_path(
-    path: Path,
-    options: DiscoveryOptions | None,
-    registry: DiscoveryRegistry | None,
-) -> tuple[DiscoveryCandidate | None, SkippedAcquisition | None]:
-    """Validate one path and keep the reason when it is skipped.
-
-    Args:
-        path: File or directory to validate.
-        options: Discovery configuration, or `None` for the defaults.
-        registry: Validator registry, or `None` for the built-in registry.
-
-    Returns:
-        The candidate for an accepted path, the skipped entry for a recognized
-        but rejected path, or neither for an unsupported path. A candidate takes
-        precedence when validators disagree.
-    """
-    selected = options or DiscoveryOptions()
-    normalized_path = Path(path).expanduser().absolute()
-    try:
-        metadata = os.lstat(normalized_path)
-    except OSError:
-        return None, None
-    if stat.S_ISLNK(metadata.st_mode):
-        return None, None
-
-    if stat.S_ISREG(metadata.st_mode):
-        tree = TraversalTree(files=(normalized_path,))
-    elif stat.S_ISDIR(metadata.st_mode):
-        tree = TraversalTree(directories=(normalized_path,))
-    else:
-        return None, None
-
-    candidates, skips = _validate_tree(tree, selected, registry)
-    if candidates:
-        return candidates[0], None
-    return None, skips[0] if skips else None
 
 
 def _validate_tree(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import threading
 from pathlib import Path
 
 import pyarrow as pa
@@ -11,6 +12,7 @@ from rawtrace_qc import environment
 from rawtrace_qc.errors import (
     ArtifactValidationError,
     ExtractionError,
+    OperationCancelledError,
     ThermoHelperCommandError,
     ThermoHelperLicenseError,
     ThermoHelperNotFoundError,
@@ -184,6 +186,34 @@ class TestThermoExtractorUnit:
         assert error.value.path == raw_file.resolve()
         assert isinstance(error.value.__cause__, ThermoHelperCommandError)
         assert not output_directory.exists() or not list(output_directory.iterdir())
+
+    def test_cancel_passes_the_event_to_the_helper_and_cleans_up_partial_output(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        raw_file = tmp_path / "sample.raw"
+        raw_file.touch()
+        output_directory = tmp_path / "output-dir"
+        cancel = threading.Event()
+        received: list[object] = []
+
+        monkeypatch.setattr(
+            "rawtrace_qc.extractors.thermo.locate_thermo_helper",
+            lambda *args, **kwargs: Path("mock.exe"),
+        )
+
+        def mock_cancelled_runner(command, **kwargs):
+            received.append(kwargs["cancel"])
+            temp_out = Path(command[command.index("-o") + 1])
+            (temp_out / "sample.raw.ms1-trace.parquet").write_text("partial")
+            raise OperationCancelledError("stopped")
+
+        monkeypatch.setattr("rawtrace_qc.extractors.thermo.run_thermo_helper", mock_cancelled_runner)
+
+        with pytest.raises(OperationCancelledError):
+            ThermoExtractor(cancel=cancel).extract(raw_file, output_directory=output_directory)
+
+        assert received == [cancel]
+        assert not output_directory.exists()
 
     def test_helper_license_failure_stays_a_helper_error(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         raw_file = tmp_path / "sample.raw"

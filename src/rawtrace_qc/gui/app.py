@@ -3,19 +3,19 @@
 from __future__ import annotations
 
 import sys
+import textwrap
+import threading
 import webbrowser
 from dataclasses import replace
+from datetime import datetime
 from importlib import import_module
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
-from rawtrace_qc.discovery import DiscoveryScope, Vendor
+from rawtrace_qc.discovery import DiscoveryResult, DiscoveryScope, Vendor, discover
 from rawtrace_qc.environment import default_data_directory
-from rawtrace_qc.errors import (
-    ConfigurationError,
-    DiscoveryError,
-)
+from rawtrace_qc.errors import ConfigurationError, OperationCancelledError
 from rawtrace_qc.gui.cache import TraceCache
 from rawtrace_qc.gui.config import (
     GuiSettings,
@@ -24,8 +24,11 @@ from rawtrace_qc.gui.config import (
 )
 from rawtrace_qc.gui.patterns import FilenamePattern, PatternMode
 from rawtrace_qc.gui.reporting import (
+    ExcludedFile,
     ReportGenerationOptions,
     ReportGenerationResult,
+    ReportProgress,
+    ReportStage,
     ReportStorageMode,
     ReportWorkspace,
     generate_report,
@@ -42,8 +45,16 @@ from rawtrace_qc.gui.thermo_tool import (
     thermo_tool_required_message,
     thermo_tool_tooltip,
 )
-from rawtrace_qc.gui.workflow import RawFileSelection
+from rawtrace_qc.gui.workflow import (
+    THERMO_SETUP_STEP,
+    ExclusionReason,
+    RawFileSelection,
+    SelectedEntry,
+)
 from rawtrace_qc.thermo import ThermoHelperStatus, get_thermo_helper_status
+
+_EXCLUSION_COLUMN_WIDTH = 170
+_LOG_MAX_LINES = 5000
 
 
 def main() -> int:
@@ -84,6 +95,7 @@ def create_window(
     if application is not None:
         apply_theme(application, theme, qt_gui)
 
+    exclusion_role = qt_core.Qt.ItemDataRole.UserRole.value + 1
     svg_pixmap_cache: dict[tuple[str, str, int], Any] = {}
 
     def themed_svg_pixmap(resource_name: str, color: str, size: int) -> Any:
@@ -275,7 +287,10 @@ def create_window(
             option: Any,
             index: Any,
         ) -> None:
-            if not index.flags() & qt_core.Qt.ItemFlag.ItemIsUserCheckable:
+            exclusion = index.data(exclusion_role)
+            if not exclusion and not (
+                index.flags() & qt_core.Qt.ItemFlag.ItemIsUserCheckable
+            ):
                 super().paint(painter, option, index)
                 return
             theme = get_active_theme()
@@ -286,7 +301,9 @@ def create_window(
                     qt_gui.QColor(theme.list_selected_background),
                 )
             display_option = qt_widgets.QStyleOptionViewItem(option)
-            display_option.rect.adjust(24, 0, 0, 0)
+            display_option.rect.adjust(
+                24, 0, -_EXCLUSION_COLUMN_WIDTH if exclusion else 0, 0
+            )
             display_option.palette.setColor(
                 qt_gui.QPalette.ColorRole.Highlight,
                 qt_gui.QColor(theme.list_selected_background),
@@ -302,7 +319,27 @@ def create_window(
             painter.setPen(qt_gui.QPen(qt_gui.QColor(theme.checkbox_border), 1.2))
             painter.setBrush(qt_gui.QBrush(qt_gui.QColor(theme.checkbox_background)))
             painter.drawRoundedRect(rect, 3, 3)
-            if index.data(qt_core.Qt.ItemDataRole.CheckStateRole) == (
+            if exclusion:
+                exclusion_color = qt_gui.QColor(theme.destructive_button_text)
+                painter.setPen(qt_gui.QPen(exclusion_color, 2))
+                painter.drawLine(
+                    rect.topLeft() + qt_core.QPoint(3, 3),
+                    rect.bottomRight() - qt_core.QPoint(3, 3),
+                )
+                painter.drawLine(
+                    rect.topRight() + qt_core.QPoint(-3, 3),
+                    rect.bottomLeft() + qt_core.QPoint(3, -3),
+                )
+                painter.setPen(exclusion_color)
+                painter.drawText(
+                    option.rect.adjusted(
+                        option.rect.width() - _EXCLUSION_COLUMN_WIDTH, 0, -10, 0
+                    ),
+                    qt_core.Qt.AlignmentFlag.AlignRight
+                    | qt_core.Qt.AlignmentFlag.AlignVCenter,
+                    str(exclusion),
+                )
+            elif index.data(qt_core.Qt.ItemDataRole.CheckStateRole) == (
                 qt_core.Qt.CheckState.Checked.value
             ):
                 painter.setPen(qt_gui.QPen(qt_gui.QColor(theme.checkbox_check), 2))
@@ -353,33 +390,93 @@ def create_window(
                 return True
             return super().editorEvent(event, model, option, index)
 
+    class SelectedFileDelegate(FileItemDelegate):
+        """Keep rows as wide as the list, so the exclusion column stays visible.
+
+        Long file names are shortened instead of widening the rows. The tooltip
+        shows the full path.
+        """
+
+        def sizeHint(self, option: Any, index: Any) -> Any:
+            return qt_core.QSize(0, super().sizeHint(option, index).height())
+
     class WorkerSignals(qt_core.QObject):
         """Carry background report results back to the GUI thread."""
 
         finished = qt_core.Signal(object)
         failed = qt_core.Signal(str)
+        cancelled = qt_core.Signal()
+        progress = qt_core.Signal(object)
+        excluded = qt_core.Signal(object)
 
     class ReportWorker(qt_core.QRunnable):
         """Run report generation without blocking the Qt event loop."""
 
-        def __init__(self, candidates: tuple[Any, ...], options: Any) -> None:
+        def __init__(
+            self, candidates: tuple[Any, ...], options: Any, trace_cache: TraceCache
+        ) -> None:
             super().__init__()
             self.candidates = candidates
             self.options = options
+            self.trace_cache = trace_cache
+            self.cancel = threading.Event()
             self.signals = WorkerSignals()
 
         def run(self) -> None:
             try:
                 result = generate_report(
                     self.candidates,
-                    cache,
+                    self.trace_cache,
                     options=self.options,
                     workspace=workspace,
+                    on_progress=self.signals.progress.emit,
+                    on_excluded=self.signals.excluded.emit,
+                    cancel=self.cancel,
                 )
+            except OperationCancelledError:
+                self.signals.cancelled.emit()
             except Exception as error:
                 self.signals.failed.emit(str(error))
             else:
                 self.signals.finished.emit(result)
+
+    class ElidedLabel(qt_widgets.QLabel):
+        """Show one line of any length without widening the window.
+
+        The text is shortened to the available width, and the tooltip holds it in
+        full.
+        """
+
+        def __init__(self) -> None:
+            super().__init__()
+            self._full_text = ""
+            self.setSizePolicy(
+                qt_widgets.QSizePolicy.Policy.Ignored,
+                qt_widgets.QSizePolicy.Policy.Preferred,
+            )
+
+        def full_text(self) -> str:
+            """Return the text before shortening."""
+            return self._full_text
+
+        def set_full_text(self, text: str) -> None:
+            """Replace the text and shorten it to the current width."""
+            self._full_text = text
+            self.setToolTip(text)
+            self._elide()
+
+        def resizeEvent(self, event: Any) -> None:
+            super().resizeEvent(event)
+            self._elide()
+
+        def _elide(self) -> None:
+            self.setText(
+                self.fontMetrics().elidedText(
+                    self._full_text,
+                    qt_core.Qt.TextElideMode.ElideMiddle,
+                    self.width(),
+                )
+            )
 
     class ElidedLineEdit(qt_widgets.QLineEdit):
         """Display long paths with a middle ellipsis when the field is inactive."""
@@ -522,7 +619,7 @@ def create_window(
         def __init__(self) -> None:
             super().__init__()
             self.setWindowTitle("rawtrace-qc | run review")
-            self.resize(1180, 820)
+            self.resize(1180, min(900, self.screen().availableGeometry().height() - 40))
             self.setMinimumSize(900, 620)
             self._settings = settings
             self._saved_patterns = list(settings.patterns)
@@ -532,8 +629,15 @@ def create_window(
             self._workspace = workspace
             self._cache = cache
             self._worker: Any = None
+            self._scan_task: Any = None
             self._thermo_status_task: Any = None
-            self._pending_report: tuple[Any, Any] | None = None
+            self._pending_options: Any = None
+            self._last_report: ReportGenerationResult | None = None
+            self._run_message: tuple[tuple[SelectedEntry, ...], str, str] | None = None
+            self._log_view_large: Any = None
+            self._log_dialog: Any = None
+            self._closing = False
+            self._last_progress_stage: ReportStage | None = None
             self._rendering_candidates = False
             self._rendering_selected = False
             self._configuration_message = configuration_message
@@ -708,9 +812,9 @@ def create_window(
             self.source_edit.setFixedHeight(40)
             self.source_edit.setPlaceholderText("Choose a folder to inspect")
             self.source_edit.setReadOnly(True)
-            choose_source = qt_widgets.QPushButton("Choose folder")
-            choose_source.setObjectName("secondary")
-            choose_source.clicked.connect(self._choose_source)
+            self.choose_source_button = qt_widgets.QPushButton("Choose folder")
+            self.choose_source_button.setObjectName("secondary")
+            self.choose_source_button.clicked.connect(self._choose_source)
             self.include_subfolders = qt_widgets.QCheckBox("Include subfolders")
             self.include_subfolders.setChecked(
                 self._settings.scope is DiscoveryScope.RECURSIVE
@@ -718,17 +822,15 @@ def create_window(
             self.include_subfolders.setToolTip(
                 "Search folders below the selected folder"
             )
-            scan_button = qt_widgets.QPushButton("Scan folder")
-            scan_button.setObjectName("outlineTeal")
-            scan_button.clicked.connect(self._scan_source)
+            self.scan_button = qt_widgets.QPushButton("Scan folder")
+            self.scan_button.setObjectName("outlineTeal")
+            self.scan_button.clicked.connect(self._scan_source)
             source_row.addWidget(self.source_edit, 1)
-            source_row.addWidget(choose_source)
-            source_row.addWidget(scan_button)
+            source_row.addWidget(self.choose_source_button)
+            source_row.addWidget(self.scan_button)
             source_layout.addLayout(source_row)
             source_layout.addWidget(self.include_subfolders)
             root.addWidget(source_frame)
-            self.discovery_status = qt_widgets.QLabel("No folder scanned yet")
-            self.discovery_status.setObjectName("statusLabel")
 
             selected_frame = qt_widgets.QFrame()
             selected_frame.setObjectName("card")
@@ -748,6 +850,14 @@ def create_window(
             self.selected_count = qt_widgets.QLabel("0 of 0 checked")
             self.selected_count.setObjectName("countPill")
             selected_heading.addWidget(self.selected_count)
+            self.excluded_count = qt_widgets.QLabel()
+            self.excluded_count.setObjectName("excludedPill")
+            self.excluded_count.setToolTip(
+                "Excluded files are not part of the report. Hover over a file to "
+                "see why and what to do."
+            )
+            self.excluded_count.hide()
+            selected_heading.addWidget(self.excluded_count)
             selected_heading.addStretch()
             self.check_all_button = qt_widgets.QPushButton("Check all")
             self.check_all_button.setObjectName("secondarySmall")
@@ -783,7 +893,7 @@ def create_window(
             selected_layout.addLayout(selected_heading)
             self.selected_list = DropList()
             self.selected_list.setObjectName("selectedList")
-            self.selected_list._file_item_delegate = FileItemDelegate(
+            self.selected_list._file_item_delegate = SelectedFileDelegate(
                 self.selected_list
             )
             self.selected_list.setItemDelegate(self.selected_list._file_item_delegate)
@@ -791,11 +901,13 @@ def create_window(
                 qt_widgets.QAbstractItemView.SelectionMode.ExtendedSelection
             )
             self.selected_list.setTextElideMode(qt_core.Qt.TextElideMode.ElideMiddle)
+            self.selected_list.setHorizontalScrollBarPolicy(
+                qt_core.Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+            )
             self.selected_list.setToolTip("Drop valid .raw files or .d folders here")
             self.selected_list.paths_dropped.connect(self._add_paths)
             self.selected_list.itemChanged.connect(self._selected_item_changed)
             selected_layout.addWidget(self.selected_list, 1)
-            self._update_selected_count()
             root.addWidget(selected_frame, 1)
 
             report_frame = qt_widgets.QFrame()
@@ -851,13 +963,134 @@ def create_window(
             self.generate_button.setFixedHeight(44)
             self.generate_button.clicked.connect(self._generate)
             root.addWidget(report_frame)
+            self.report_status = ElidedLabel()
+            self.report_status.setObjectName("statusLabel")
+            self.open_report_button = qt_widgets.QPushButton("Open report")
+            self.open_report_button.setObjectName("secondary")
+            self.open_report_button.setFixedHeight(44)
+            self.open_report_button.clicked.connect(self._open_last_report)
+            self.open_report_button.hide()
+            self.cancel_button = qt_widgets.QPushButton("Cancel")
+            self.cancel_button.setObjectName("destructiveOutline")
+            self.cancel_button.setFixedHeight(44)
+            self.cancel_button.clicked.connect(self._cancel_report)
+            self.cancel_button.hide()
             bottom_bar = qt_widgets.QHBoxLayout()
-            bottom_bar.addWidget(self.discovery_status, 1)
+            bottom_bar.addWidget(self.report_status, 1)
+            bottom_bar.addWidget(self.open_report_button)
+            bottom_bar.addWidget(self.cancel_button)
             bottom_bar.addWidget(self.generate_button)
             root.addLayout(bottom_bar)
+            self.log_view = self._new_log_view()
+            self.log_view.setFixedHeight(72)
+            self.log_view.setPlaceholderText("Activity log")
+            open_log_button = qt_widgets.QPushButton("Open log")
+            open_log_button.setObjectName("secondarySmall")
+            open_log_button.setFixedHeight(32)
+            open_log_button.clicked.connect(self._open_log)
+            log_row = qt_widgets.QHBoxLayout()
+            log_row.addWidget(self.log_view, 1)
+            log_row.addWidget(open_log_button, 0, qt_core.Qt.AlignmentFlag.AlignTop)
+            root.addLayout(log_row)
             self._storage_changed()
+            self._update_selected_count()
             if self._configuration_message:
-                self.discovery_status.setText(self._configuration_message)
+                self._log(self._configuration_message)
+
+        def _new_log_view(self) -> Any:
+            view = qt_widgets.QPlainTextEdit()
+            view.setObjectName("activityLog")
+            view.setReadOnly(True)
+            view.setMaximumBlockCount(_LOG_MAX_LINES)
+            view.setWordWrapMode(
+                qt_gui.QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere
+            )
+            return view
+
+        def _log(self, message: str) -> None:
+            """Add one timestamped line to the activity log."""
+            line = f"{datetime.now():%H:%M:%S}  {message}"
+            self.log_view.appendPlainText(line)
+            if self._log_view_large is not None:
+                self._log_view_large.appendPlainText(line)
+
+        def _open_log(self) -> None:
+            """Show the activity log in a large window that stays up to date."""
+            if self._log_dialog is None:
+                self._log_dialog = qt_widgets.QDialog(self)
+                self._log_dialog.setWindowTitle("rawtrace-qc log")
+                self._log_dialog.resize(900, 560)
+                layout = qt_widgets.QVBoxLayout(self._log_dialog)
+                self._log_view_large = self._new_log_view()
+                self._log_view_large.setPlainText(self.log_view.toPlainText())
+                layout.addWidget(self._log_view_large, 1)
+                buttons = qt_widgets.QHBoxLayout()
+                buttons.addStretch()
+                copy_button = qt_widgets.QPushButton("Copy all")
+                copy_button.setObjectName("secondary")
+                copy_button.clicked.connect(
+                    lambda: qt_widgets.QApplication.clipboard().setText(
+                        self.log_view.toPlainText()
+                    )
+                )
+                buttons.addWidget(copy_button)
+                close_button = qt_widgets.QPushButton("Close")
+                close_button.setObjectName("secondary")
+                close_button.clicked.connect(self._log_dialog.close)
+                buttons.addWidget(close_button)
+                layout.addLayout(buttons)
+            self._log_dialog.show()
+            self._log_dialog.raise_()
+            self._log_dialog.activateWindow()
+
+        def _set_report_status(self, text: str, state: str = "") -> None:
+            self.report_status.set_full_text(text)
+            self.report_status.setProperty("state", state)
+            self.report_status.style().unpolish(self.report_status)
+            self.report_status.style().polish(self.report_status)
+
+        def _refresh_report_status(self) -> None:
+            """Show how the current selection relates to the last report run."""
+            if self._worker is not None:
+                return
+            active = self._selection.active_selected()
+            report = self._last_report
+            matches_report = report is not None and active == report.included
+            self.open_report_button.setVisible(report is not None)
+            self.open_report_button.setText(
+                "Open report" if matches_report else "Open last report"
+            )
+            if (
+                self._run_message is not None
+                and self._run_message[0] == self._selection.selected
+            ):
+                self._set_report_status(self._run_message[1], self._run_message[2])
+            elif matches_report:
+                excluded = len(self._selection.excluded_selected())
+                self._set_report_status(
+                    f"Report ready: {len(active)} file(s)"
+                    + (f", {excluded} excluded" if excluded else ""),
+                    "warning" if excluded else "ok",
+                )
+            elif report is not None:
+                self._set_report_status(
+                    "Selection changed since the last report", "warning"
+                )
+            elif active:
+                self._set_report_status(f"{len(active)} file(s) ready for a report")
+            else:
+                self._set_report_status(self._no_active_files_text())
+
+        def _no_active_files_text(self) -> str:
+            excluded = len(self._selection.excluded_selected())
+            if excluded and excluded == len(self._selection.selected):
+                return f"No usable files: {excluded} excluded"
+            return "No files checked"
+
+        def _set_run_message(self, text: str, state: str) -> None:
+            """Show a run result until the selection changes."""
+            self._run_message = (self._selection.selected, text, state)
+            self._refresh_report_status()
 
         def _choose_source(self) -> None:
             path = qt_widgets.QFileDialog.getExistingDirectory(
@@ -880,38 +1113,55 @@ def create_window(
         def _scan_source(self) -> None:
             source_text = self.source_edit.text().strip()
             if not source_text:
-                self.discovery_status.setText("Choose a folder before scanning.")
+                self._log("Choose a folder before scanning.")
                 return
-            try:
-                scope = self._selected_scope()
-                self._selection.options = replace(self._selection.options, scope=scope)
-                self._settings = replace(self._settings, scope=scope)
-                result = self._selection.discover_folder(Path(source_text))
-            except (DiscoveryError, OSError, ValueError) as error:
-                self._clear_candidates()
-                self.discovery_status.setText(str(error))
-                return
-            if not result.candidates:
-                self.discovery_status.setText("No valid rawfiles were found in folder")
-                return
-            self.discovery_status.setText(
-                f"{len(result.candidates)} valid candidate(s) found"
-                + (
-                    f"  /  {len(result.issues)} traversal issue(s)"
-                    if result.issues
-                    else ""
-                )
+            source = Path(source_text)
+            scope = self._selected_scope()
+            self._selection.options = replace(self._selection.options, scope=scope)
+            self._settings = replace(self._settings, scope=scope)
+            options = self._selection.options
+            self.scan_button.setEnabled(False)
+            self.choose_source_button.setEnabled(False)
+            self._log(f"Scanning {source}...")
+            self._scan_task = start_background_task(
+                qt_core,
+                lambda: discover(source, options),
+                self._scan_finished,
+                self._scan_failed,
             )
-            self._open_candidates()
+
+        def _scan_finished(self, result: DiscoveryResult) -> None:
+            self._end_scan()
+            if self._closing:
+                return
+            self._selection.set_candidates(result.candidates)
+            for skip in result.skipped:
+                self._log(f"Skipped {skip.path.name}: {skip.message}")
+            for issue in result.issues:
+                self._log(f"Could not scan {issue.path}: {issue.message}")
+            self._log(
+                f"Scan finished: {len(result.candidates)} valid file(s), "
+                f"{len(result.skipped)} skipped, {len(result.issues)} issue(s)"
+            )
+            if result.candidates:
+                self._open_candidates()
+
+        def _scan_failed(self, message: str) -> None:
+            self._end_scan()
+            if self._closing:
+                return
+            self._selection.set_candidates(())
+            self._log(f"Scan failed: {message}")
+
+        def _end_scan(self) -> None:
+            self._scan_task = None
+            self.scan_button.setEnabled(True)
+            self.choose_source_button.setEnabled(True)
 
         def _clear_candidates(self) -> None:
             self._selection.set_candidates(())
-            self.discovery_status.setText("Candidate list cleared")
 
         def _open_candidates(self) -> None:
-            if not self._selection.candidates:
-                self.discovery_status.setText("No valid rawfiles were found in folder")
-                return
             dialog = qt_widgets.QDialog(self)
             dialog.setWindowTitle("Candidate raw files")
             dialog.resize(980, 700)
@@ -1009,7 +1259,7 @@ def create_window(
                         if include_disabled or check.isChecked():
                             patterns.append(pattern)
                 except (ConfigurationError, AttributeError) as error:
-                    self.discovery_status.setText(str(error))
+                    self._log(str(error))
                     return None
                 return tuple(patterns)
 
@@ -1126,9 +1376,11 @@ def create_window(
             def promote_candidates() -> None:
                 if read_rows(False) is None:
                     return
+                excluded_before = len(self._selection.excluded_selected())
                 self._selection.promote_active_candidates()
                 self._refresh_selected()
-                self.discovery_status.setText(
+                self._log_added_exclusions(excluded_before)
+                self._log(
                     f"{len(self._selection.active_selected())} selected raw file(s) "
                     "active"
                 )
@@ -1200,16 +1452,28 @@ def create_window(
                     qt_core.Qt.ItemDataRole.UserRole,
                     path_text,
                 )
-                item.setFlags(
-                    qt_core.Qt.ItemFlag.ItemIsEnabled
-                    | qt_core.Qt.ItemFlag.ItemIsSelectable
-                    | qt_core.Qt.ItemFlag.ItemIsUserCheckable
-                )
-                item.setCheckState(
-                    qt_core.Qt.CheckState.Checked
-                    if entry.active
-                    else qt_core.Qt.CheckState.Unchecked
-                )
+                if entry.exclusion is None:
+                    item.setFlags(
+                        qt_core.Qt.ItemFlag.ItemIsEnabled
+                        | qt_core.Qt.ItemFlag.ItemIsSelectable
+                        | qt_core.Qt.ItemFlag.ItemIsUserCheckable
+                    )
+                    item.setCheckState(
+                        qt_core.Qt.CheckState.Checked
+                        if entry.active
+                        else qt_core.Qt.CheckState.Unchecked
+                    )
+                else:
+                    item.setFlags(
+                        qt_core.Qt.ItemFlag.ItemIsEnabled
+                        | qt_core.Qt.ItemFlag.ItemIsSelectable
+                    )
+                    item.setData(exclusion_role, entry.exclusion.reason.value)
+                    item.setToolTip(
+                        f"{path_text}\nExcluded: {entry.exclusion.reason.value}\n"
+                        f"{textwrap.fill(entry.exclusion.detail, width=100)}\n"
+                        f"{entry.exclusion.next_step}"
+                    )
                 self.selected_list.addItem(item)
                 item.setSelected(path_text in selected_paths)
             self._update_selected_count()
@@ -1234,16 +1498,36 @@ def create_window(
             self.check_all_button.setEnabled(has_items)
             self.uncheck_all_button.setEnabled(has_items)
             self.remove_highlighted_button.setEnabled(has_items)
+            excluded_count = len(self._selection.excluded_selected())
+            self.excluded_count.setText(f"{excluded_count} of {total_count} excluded")
+            self.excluded_count.setVisible(excluded_count > 0)
+            self._refresh_report_status()
 
         def _add_paths(self, paths: tuple[Path, ...]) -> None:
+            excluded_before = len(self._selection.excluded_selected())
             result = self._selection.add_paths(paths)
             self._refresh_selected()
-            messages = []
             if result.accepted:
-                messages.append(f"Added {len(result.accepted)} valid path(s)")
-            if result.rejected:
-                messages.append(f"Rejected {len(result.rejected)} invalid path(s)")
-            self.discovery_status.setText("  /  ".join(messages) or "No paths added")
+                self._log(f"Added {len(result.accepted)} valid path(s)")
+            self._log_added_exclusions(excluded_before)
+            explained = {skip.path.resolve() for skip in result.skipped}
+            for skip in result.skipped:
+                self._log(f"Rejected {skip.path.name}: {skip.message}")
+            for path in result.rejected:
+                if path not in explained:
+                    self._log(
+                        f"Rejected {path}: not a supported raw file or acquisition "
+                        "folder"
+                    )
+
+        def _log_added_exclusions(self, excluded_before: int) -> None:
+            """Log Thermo files that were excluded as soon as they were added."""
+            added = len(self._selection.excluded_selected()) - excluded_before
+            if added > 0:
+                self._log(
+                    f"Thermo tool not ready: {added} added file(s) excluded. "
+                    f"{THERMO_SETUP_STEP}"
+                )
 
         def _remove_selected(self) -> None:
             paths = tuple(
@@ -1285,12 +1569,6 @@ def create_window(
                 self.report_directory_edit.setText(path)
 
         def _generate(self) -> None:
-            candidates = self._selection.active_selected()
-            if not candidates:
-                self.discovery_status.setText(
-                    "Select at least one active raw file first."
-                )
-                return
             try:
                 storage_mode = (
                     ReportStorageMode.PERMANENT
@@ -1304,36 +1582,56 @@ def create_window(
                     precision_mode="low",
                 )
             except (ConfigurationError, ValueError) as error:
-                self.discovery_status.setText(str(error))
+                self._log(f"Report not started: {error}")
+                self._set_report_status("Report not started (see log)", "error")
                 return
-            if any(candidate.vendor == Vendor.THERMO for candidate in candidates):
-                self._pending_report = (candidates, options)
+            self._pending_options = options
+            if any(
+                entry.candidate.vendor == Vendor.THERMO
+                for entry in self._selection.selected
+            ):
                 self.generate_button.setEnabled(False)
-                self.discovery_status.setText("Checking the Thermo tool...")
+                self._set_report_status("Checking the Thermo tool...")
                 self._worker = start_background_task(
                     qt_core,
                     get_thermo_helper_status,
                     self._thermo_tool_checked,
-                    self._report_failed,
+                    self._thermo_tool_check_failed,
                 )
                 return
-            self._start_report(candidates, options)
+            self._start_pending_report(None)
 
         def _thermo_tool_checked(self, status: ThermoHelperStatus) -> None:
             self._worker = None
             self._set_thermo_status(status)
-            pending_report = self._pending_report
-            self._pending_report = None
-            if status.is_ready and pending_report is not None:
-                self._start_report(*pending_report)
+            self._start_pending_report(status)
+
+        def _thermo_tool_check_failed(self, message: str) -> None:
+            self._worker = None
+            self._thermo_status_failed(message)
+            self._start_pending_report(None)
+
+        def _start_pending_report(self, status: ThermoHelperStatus | None) -> None:
+            """Start the requested report with the files that remain active."""
+            options = self._pending_options
+            self._pending_options = None
+            candidates = self._selection.active_selected()
+            if candidates:
+                self._start_report(candidates, options)
                 return
             self.generate_button.setEnabled(True)
-            if status.is_ready:
-                return
-            self.discovery_status.setText(
-                "Report not generated: the Thermo tool is not ready."
-            )
-            self._prompt_thermo_tool_setup(status)
+            self._refresh_report_status()
+            self._log(f"Report not started: {self._no_active_files_text()}")
+            if (
+                status is not None
+                and not status.is_ready
+                and any(
+                    entry.exclusion is not None
+                    and entry.exclusion.reason is ExclusionReason.THERMO_NOT_READY
+                    for entry in self._selection.selected
+                )
+            ):
+                self._prompt_thermo_tool_setup(status)
 
         def _prompt_thermo_tool_setup(self, status: ThermoHelperStatus) -> None:
             message = qt_widgets.QMessageBox(self)
@@ -1361,11 +1659,28 @@ def create_window(
             self._thermo_status_task = None
             self.thermo_tool_button.setToolTip(thermo_tool_tooltip(status))
             self.thermo_tool_attention.setVisible(thermo_tool_needs_attention(status))
+            changed = self._selection.set_thermo_ready(status.is_ready, status.message)
+            if changed:
+                self._log(
+                    f"Thermo tool ready: {changed} file(s) restored"
+                    if status.is_ready
+                    else (
+                        f"Thermo tool not ready: {changed} file(s) excluded. "
+                        f"{THERMO_SETUP_STEP}"
+                    )
+                )
+            self._refresh_selected()
 
         def _thermo_status_failed(self, message: str) -> None:
             self._thermo_status_task = None
             self.thermo_tool_button.setToolTip(f"Thermo Tool: {message}")
             self.thermo_tool_attention.show()
+            changed = self._selection.set_thermo_ready(False, message)
+            self._log(
+                f"Could not check the Thermo tool, {changed} file(s) excluded: "
+                f"{message}"
+            )
+            self._refresh_selected()
 
         def _open_thermo_tool(self) -> None:
             create_thermo_tool_dialog(
@@ -1373,27 +1688,78 @@ def create_window(
             ).exec()
 
         def _start_report(self, candidates: Any, options: Any) -> None:
-            self._worker = ReportWorker(candidates, options)
-            self._worker.signals.finished.connect(self._report_finished)
-            self._worker.signals.failed.connect(self._report_failed)
+            self._worker = ReportWorker(candidates, options, self._cache)
+            signals = self._worker.signals
+            signals.finished.connect(self._report_finished)
+            signals.failed.connect(self._report_failed)
+            signals.cancelled.connect(self._report_cancelled)
+            signals.progress.connect(self._report_progress)
+            signals.excluded.connect(self._report_file_excluded)
+            self._run_message = None
+            self._last_progress_stage = None
             self.generate_button.setEnabled(False)
-            self.discovery_status.setText("Generating report in the background...")
+            self.cancel_button.setEnabled(True)
+            self.cancel_button.show()
+            self._set_report_status("Starting report...")
+            self._log(f"Generating a report from {len(candidates)} file(s)")
             qt_core.QThreadPool.globalInstance().start(self._worker)
 
-        def _report_finished(self, result: ReportGenerationResult) -> None:
+        def _report_progress(self, progress: ReportProgress) -> None:
+            if self._worker is None or self._worker.cancel.is_set():
+                return
+            self._set_report_status(progress.message)
+            if (
+                progress.stage is ReportStage.EXTRACTING
+                or progress.stage is not self._last_progress_stage
+            ):
+                self._log(progress.message)
+            self._last_progress_stage = progress.stage
+
+        def _report_file_excluded(self, file: ExcludedFile) -> None:
+            self._selection.exclude(file.candidate.path, file.exclusion)
+            self._refresh_selected()
+            self._log(
+                f"Excluded {file.candidate.path.name} "
+                f"({file.exclusion.reason.value}): {file.exclusion.detail}"
+            )
+
+        def _cancel_report(self) -> None:
+            if self._worker is None:
+                return
+            self._worker.cancel.set()
+            self.cancel_button.setEnabled(False)
+            self._set_report_status("Cancelling...")
+            self._log("Cancelling the report")
+
+        def _open_last_report(self) -> None:
+            if self._last_report is not None:
+                webbrowser.open(self._last_report.output_path.as_uri())
+
+        def _end_report_run(self) -> None:
             self._worker = None
             self.generate_button.setEnabled(True)
-            self.discovery_status.setText(
-                f"Report ready: {result.output_path}  /  "
-                f"{result.cache_hits} cache hit(s)"
+            self.cancel_button.hide()
+
+        def _report_finished(self, result: ReportGenerationResult) -> None:
+            self._end_report_run()
+            self._last_report = result
+            self._log(
+                f"Report ready: {result.output_path} ({len(result.included)} file(s), "
+                f"{len(result.excluded)} excluded in this run, "
+                f"{result.cache_hits} cache hit(s))"
             )
+            self._refresh_report_status()
             webbrowser.open(result.output_path.as_uri())
 
         def _report_failed(self, message: str) -> None:
-            self._worker = None
-            self._pending_report = None
-            self.generate_button.setEnabled(True)
-            self.discovery_status.setText(f"Report failed: {message}")
+            self._end_report_run()
+            self._log(f"Report failed: {message}")
+            self._set_run_message("Report failed (see log)", "error")
+
+        def _report_cancelled(self) -> None:
+            self._end_report_run()
+            self._log("Report cancelled")
+            self._set_run_message("Report cancelled", "")
 
         def _open_settings(self) -> None:
             dialog = qt_widgets.QDialog(self)
@@ -1659,11 +2025,12 @@ def create_window(
                 qt_widgets.QMessageBox.information(
                     self,
                     "Report in progress",
-                    "Wait for the current report to finish before closing the "
-                    "application.",
+                    "Cancel the current report or wait for it to finish before "
+                    "closing the application.",
                 )
                 event.ignore()
                 return
+            self._closing = True
             self._workspace.cleanup()
             event.accept()
 

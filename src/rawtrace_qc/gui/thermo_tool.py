@@ -123,7 +123,7 @@ def thermo_tool_tooltip(status: ThermoHelperStatus) -> str:
 
 
 def thermo_tool_required_message(status: ThermoHelperStatus) -> str:
-    """Explain why a report with Thermo files cannot be generated.
+    """Explain why Thermo files are excluded from reports and how to fix it.
 
     Args:
         status: Helper status from `get_thermo_helper_status`.
@@ -140,8 +140,8 @@ def thermo_tool_required_message(status: ThermoHelperStatus) -> str:
     return (
         "Reports with Thermo .raw files need the ThermoScanHeaderExtractor tool. "
         f"{reasons[status.state]}\n\n"
-        "Open the Thermo Tool window to see how to set it up, or untick the "
-        "Thermo files to generate a report without them."
+        "The Thermo files are excluded until it is set up. Open the Thermo Tool "
+        "window to see how. The files then return automatically."
     )
 
 

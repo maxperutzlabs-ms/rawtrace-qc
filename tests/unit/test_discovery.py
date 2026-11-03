@@ -23,6 +23,7 @@ from rawtrace_qc.discovery import (
     Vendor,
     discover,
     discover_inputs,
+    inspect_path,
     resolve_input_path_pattern,
     validate_bruker,
     validate_path,
@@ -273,6 +274,29 @@ class TestValidatePath:
             pytest.skip(f"symlinks are unavailable: {error}")
 
         assert validate_path(link, _options()) is None
+
+
+class TestInspectPath:
+    def test_returns_the_candidate_for_an_accepted_path(self, tmp_path: Path) -> None:
+        sample = _write_file(tmp_path / "sample.raw", 1)
+
+        assert inspect_path(sample, _options()) == (DiscoveryCandidate(sample, Vendor.THERMO, FileFormat.RAW), None)
+
+    def test_returns_the_reason_for_a_recognized_acquisition_that_is_too_small(self, tmp_path: Path) -> None:
+        sample = _write_file(tmp_path / "sample.raw", 1)
+
+        candidate, skip = inspect_path(sample, DiscoveryOptions(min_size_bytes=100))
+
+        assert candidate is None
+        assert skip is not None
+        assert skip.path == sample
+        assert skip.reason is SkipReason.TOO_SMALL
+
+    def test_returns_neither_for_an_unsupported_or_missing_path(self, tmp_path: Path) -> None:
+        other = _write_file(tmp_path / "notes.txt", 1)
+
+        assert inspect_path(other, _options()) == (None, None)
+        assert inspect_path(tmp_path / "missing.raw", _options()) == (None, None)
 
 
 class TestDiscoverInputs:
