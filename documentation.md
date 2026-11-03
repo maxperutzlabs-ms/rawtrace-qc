@@ -241,6 +241,8 @@ rawtrace-qc extract sample.raw run.d
 rawtrace-qc extract /data/acquisitions --recursive --output-dir /data/traces --precision high --ms1
 ```
 
+List all paths together, before or after the options. Run `rawtrace-qc extract --help` for a summary of the options.
+
 For each supplied path, the library first validates it as one complete acquisition. A valid Thermo `.raw` file or Bruker `.d` directory is processed directly. A recognized acquisition that is too recent or too small is reported as skipped. Any other path that is not a valid acquisition is treated as a directory to scan; a path that cannot be scanned is reported as a discovery issue. By default, directory scans inspect direct children. `--recursive` includes descendants, while discovery still treats a complete Bruker `.d` directory as one acquisition rather than scanning inside it.
 
 The command also accepts quoted glob patterns, for example `rawtrace-qc extract "/data/**/*.raw"`. The pattern is expanded by the library, so `**` matches recursively regardless of `--recursive`; that flag only controls traversal of matched directories that are not complete acquisitions. An unmatched pattern or nonexistent literal path is reported as a discovery issue.

@@ -26,14 +26,14 @@ _DEFAULT_OPTIONS = DiscoveryOptions()
 
 
 def extract(
-    paths: Annotated[
-        list[Path], Parameter(name="PATH", consume_multiple=True, negative_iterable=())
-    ],
-    recursive: Annotated[bool, Parameter(negative_bool=())] = False,
+    paths: Annotated[list[Path], Parameter(name="PATH")],
+    /,
+    *,
+    recursive: Annotated[bool, Parameter(negative_bool=(), show_default=False)] = False,
     output_dir: Path | None = None,
     precision: Literal["low", "high"] = "low",
-    ms1: Annotated[bool, Parameter(negative_bool=())] = False,
-    msn: Annotated[bool, Parameter(negative_bool=())] = False,
+    ms1: Annotated[bool, Parameter(negative_bool=(), show_default=False)] = False,
+    msn: Annotated[bool, Parameter(negative_bool=(), show_default=False)] = False,
     min_age_minutes: Annotated[
         float, Parameter(validator=validators.Number(gte=0))
     ] = _DEFAULT_OPTIONS.min_age_seconds / 60,
@@ -47,12 +47,13 @@ def extract(
     also selects both levels.
 
     Args:
-        paths: Acquisition files, directories, or glob patterns to scan.
-        recursive: If True, scan source directories recursively. Defaults to False.
-        output_dir: Optional output directory shared by all candidates.
-        precision: Trace precision, either `low` or `high`. Defaults to `low`.
-        ms1: If True, extract only MS1 unless `msn` is also True. Defaults to False.
-        msn: If True, extract only MSn unless `ms1` is also True. Defaults to False.
+        paths: Acquisition files, folders, or quoted glob patterns.
+        recursive: Also scan subfolders.
+        output_dir: Write all traces to this folder. By default, traces are
+            written beside each acquisition.
+        precision: Trace precision: `low` (float32) or `high` (float64).
+        ms1: Extract only MS1 traces. By default, both MS1 and MSn are extracted.
+        msn: Extract only MSn traces. By default, both MS1 and MSn are extracted.
         min_age_minutes: Skip acquisitions modified more recently than this.
             `0` turns the check off.
         min_size_mb: Skip acquisitions smaller than this. `0` turns the check off.

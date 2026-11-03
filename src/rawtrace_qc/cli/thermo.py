@@ -21,14 +21,15 @@ thermo_app = App(name="thermo", help="Manage ThermoScanHeaderExtractor setup.")
 
 @thermo_app.command
 def status(
+    *,
     helper_path: Path | None = None,
     data_directory: Path | None = None,
 ) -> int:
     """Show Thermo helper installation, version, and license status.
 
     Args:
-        helper_path: Optional helper executable or its containing directory.
-        data_directory: Optional application data directory override.
+        helper_path: Use this helper executable, or the helper in this folder.
+        data_directory: Use this application data folder instead of the default.
 
     Returns:
         Exit code `0` when the helper is ready, otherwise `1`.
@@ -47,14 +48,16 @@ def status(
 
 @thermo_app.command
 def install(
+    *,
     from_zip: Path | None = None,
     data_directory: Path | None = None,
 ) -> int:
     """Install the pinned helper from its release or a local ZIP archive.
 
     Args:
-        from_zip: Optional local helper ZIP for offline installation.
-        data_directory: Optional application data directory override.
+        from_zip: Install from this local ZIP instead of downloading it.
+        data_directory: Install into this application data folder instead of
+            the default.
 
     Returns:
         Exit code `0` when installation succeeds, otherwise `1`.
@@ -77,6 +80,7 @@ def install(
 
 @thermo_app.command(name="accept-license")
 def accept_license(
+    *,
     helper_path: Path | None = None,
     data_directory: Path | None = None,
 ) -> int:
@@ -86,8 +90,8 @@ def accept_license(
     prints its terms before the library records acceptance.
 
     Args:
-        helper_path: Optional helper executable or its containing directory.
-        data_directory: Optional application data directory override.
+        helper_path: Use this helper executable, or the helper in this folder.
+        data_directory: Use this application data folder instead of the default.
 
     Returns:
         Exit code `0` when acceptance is recorded, otherwise `1`.

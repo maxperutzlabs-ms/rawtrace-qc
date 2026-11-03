@@ -242,6 +242,8 @@ class TestExtractCommand:
         assert result == 0
         assert "PATH" in output
         assert "--recursive" in output
+        assert "RECURSIVE" not in output
+        assert "--PATH" not in output
         assert "--empty-PATH" not in output
         assert "--no-recursive" not in output
         assert "--ms1" in output
