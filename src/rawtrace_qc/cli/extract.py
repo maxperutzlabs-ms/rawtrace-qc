@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import Annotated, Literal
 
 from cyclopts import Parameter
 
-from rawtrace_qc.cli.errors import print_cli_error
-from rawtrace_qc.errors import RawtraceError
+from rawtrace_qc.cli.errors import (
+    CHECK_THERMO_SETUP,
+    print_cli_error,
+    thermo_setup_hint,
+)
+from rawtrace_qc.errors import RawtraceError, ThermoHelperError
 from rawtrace_qc.workflows import (
+    BatchExtractionOutcome,
     BatchExtractionResult,
     ExtractionOutcomeStatus,
     extract_batch,
@@ -42,7 +46,8 @@ def extract(
 
     Returns:
         Exit code zero only when all candidates succeed and there are no
-        discovery issues.
+        discovery issues. Acquisitions skipped by discovery are reported without
+        affecting the exit code, unless they leave an input with no candidates.
     """
     select_both_levels = not ms1 and not msn
     try:
@@ -63,32 +68,34 @@ def extract(
 
 
 def _print_batch_result(result: BatchExtractionResult) -> None:
-    print("Extraction outcomes:")
-    if not result.outcomes:
-        print("  No acquisition candidates were extracted.")
+    rows = [(skip.path, "skipped", [skip.message]) for skip in result.discovery_skips]
+    helper_errors: dict[type[Exception], Exception] = {}
     for outcome in result.outcomes:
-        print(f"  {outcome.status.value}: {outcome.candidate.path}")
-        if outcome.error is not None:
-            print_cli_error(
-                outcome.error,
-                thermo=outcome.candidate.vendor == "thermo",
-            )
-        elif outcome.result is not None:
-            if outcome.result.ms1_path is not None:
-                print(f"    MS1: {outcome.result.ms1_path}")
-            if outcome.result.msn_path is not None:
-                print(f"    MSn: {outcome.result.msn_path}")
+        rows.append(
+            (outcome.candidate.path, outcome.status.value, _outcome_details(outcome))
+        )
+        if outcome.error is not None and _is_helper_problem(outcome):
+            helper_errors.setdefault(type(outcome.error), outcome.error)
 
-    if result.discovery_issues:
-        print("Discovery issues:", file=sys.stderr)
-        for issue in result.discovery_issues:
-            print(f"  {issue.path}: {issue.message}", file=sys.stderr)
+    for path, status, details in sorted(rows, key=lambda row: row[0]):
+        print(f"{status}: {path}")
+        for detail in details:
+            print(f"  {detail}")
+
+    if helper_errors:
+        print("Thermo setup:")
+        for error in helper_errors.values():
+            print(f"  {error}")
+            print(f"  {thermo_setup_hint(error) or CHECK_THERMO_SETUP}")
+
+    for issue in result.discovery_issues:
+        print(f"{issue.path}: {issue.message}")
 
     succeeded = sum(
         outcome.status is ExtractionOutcomeStatus.SUCCEEDED
         for outcome in result.outcomes
     )
-    skipped = sum(
+    skipped = len(result.discovery_skips) + sum(
         outcome.status is ExtractionOutcomeStatus.SKIPPED for outcome in result.outcomes
     )
     failed = sum(
@@ -97,4 +104,25 @@ def _print_batch_result(result: BatchExtractionResult) -> None:
     print(
         f"Summary: {succeeded} succeeded, {skipped} skipped, {failed} failed, "
         f"{len(result.discovery_issues)} discovery issue(s)."
+    )
+
+
+def _outcome_details(outcome: BatchExtractionOutcome) -> list[str]:
+    if _is_helper_problem(outcome):
+        return ["Thermo helper is not ready."]
+    if outcome.error is not None:
+        return [str(outcome.error)]
+    if outcome.result is None:
+        return []
+    details = []
+    if outcome.result.ms1_path is not None:
+        details.append(f"MS1: {outcome.result.ms1_path}")
+    if outcome.result.msn_path is not None:
+        details.append(f"MSn: {outcome.result.msn_path}")
+    return details
+
+
+def _is_helper_problem(outcome: BatchExtractionOutcome) -> bool:
+    return outcome.status is ExtractionOutcomeStatus.SKIPPED or isinstance(
+        outcome.error, ThermoHelperError
     )

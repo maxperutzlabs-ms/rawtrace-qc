@@ -12,6 +12,8 @@ from rawtrace_qc.errors import (
     UnsupportedPlatformError,
 )
 
+CHECK_THERMO_SETUP = "Check setup with `rawtrace-qc thermo status`."
+
 
 def print_cli_error(error: Exception, *, thermo: bool = False) -> None:
     """Print a standardized CLI error message and actionable guidance to stderr.
@@ -22,30 +24,38 @@ def print_cli_error(error: Exception, *, thermo: bool = False) -> None:
             when the error is a `ThermoHelperError`. Defaults to False.
     """
     print(f"Error: {error}", file=sys.stderr)
+    hint = thermo_setup_hint(error)
+    if hint is None and thermo and isinstance(error, ThermoHelperError):
+        hint = CHECK_THERMO_SETUP
+    if hint is not None:
+        print(hint, file=sys.stderr)
+
+
+def thermo_setup_hint(error: Exception) -> str | None:
+    """Return the setup step that resolves a Thermo helper error.
+
+    Args:
+        error: The exception to look up.
+
+    Returns:
+        The setup guidance, or None if `error` has no specific setup step.
+    """
     if isinstance(error, ThermoHelperNotFoundError):
-        print(
+        return (
             "Install the helper with `rawtrace-qc thermo install` (or "
             "`rawtrace-qc thermo install --from-zip PATH` offline), then review "
-            "and accept its terms with `rawtrace-qc thermo accept-license`.",
-            file=sys.stderr,
+            "and accept its terms with `rawtrace-qc thermo accept-license`."
         )
-    elif isinstance(error, ThermoHelperLicenseError):
-        print(
+    if isinstance(error, ThermoHelperLicenseError):
+        return (
             "Review and accept the displayed terms with "
-            "`rawtrace-qc thermo accept-license`.",
-            file=sys.stderr,
+            "`rawtrace-qc thermo accept-license`."
         )
-    elif isinstance(error, ThermoHelperVersionError):
-        print(
-            "Install the pinned helper version with `rawtrace-qc thermo install`, "
-            "or pass a matching executable with `--helper-path`.",
-            file=sys.stderr,
-        )
-    elif isinstance(error, UnsupportedPlatformError):
-        print(
+    if isinstance(error, ThermoHelperVersionError):
+        return "Install the pinned helper version with `rawtrace-qc thermo install`."
+    if isinstance(error, UnsupportedPlatformError):
+        return (
             "Thermo .raw extraction is not supported on this system; see the "
-            "supported runtimes above.",
-            file=sys.stderr,
+            "supported runtimes above."
         )
-    elif thermo and isinstance(error, ThermoHelperError):
-        print("Check setup with `rawtrace-qc thermo status`.", file=sys.stderr)
+    return None

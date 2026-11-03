@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 from rawtrace_qc.cli import extract as extract_cli_module
 from rawtrace_qc.cli import main
-from rawtrace_qc.discovery import DiscoveryCandidate, DiscoveryIssue, Vendor
-from rawtrace_qc.errors import ThermoHelperNotFoundError
+from rawtrace_qc.discovery import DiscoveryCandidate, DiscoveryIssue, SkippedAcquisition, SkipReason, Vendor
+from rawtrace_qc.errors import ExtractionError, ThermoHelperCommandError, ThermoHelperNotFoundError
 from rawtrace_qc.models import ExtractionResult
 from rawtrace_qc.workflows import (
     BatchExtractionOutcome,
@@ -111,31 +111,75 @@ class TestExtractCommand:
         assert calls["select_ms1"] is select_ms1
         assert calls["select_msn"] is select_msn
 
-    def test_not_ready_thermo_skip_uses_shared_error_hints(self, tmp_path: Path, monkeypatch, capsys) -> None:
-        candidate = DiscoveryCandidate(tmp_path / "sample.raw", Vendor.THERMO, "raw")
+    def test_report_lists_every_acquisition_by_path_with_its_reason(self, tmp_path: Path, monkeypatch, capsys) -> None:
+        corrupt = tmp_path / "a.raw"
+        fresh = tmp_path / "b.raw"
+        good = tmp_path / "c.raw"
+        trace = tmp_path / "c.raw.ms1-trace.parquet"
         batch_result = BatchExtractionResult(
             outcomes=(
                 BatchExtractionOutcome(
-                    candidate,
-                    ExtractionOutcomeStatus.SKIPPED,
-                    error=ThermoHelperNotFoundError("Thermo helper is not installed."),
+                    DiscoveryCandidate(good, Vendor.THERMO, "raw"),
+                    ExtractionOutcomeStatus.SUCCEEDED,
+                    ExtractionResult(ms1_path=trace),
+                ),
+                BatchExtractionOutcome(
+                    DiscoveryCandidate(corrupt, Vendor.THERMO, "raw"),
+                    ExtractionOutcomeStatus.FAILED,
+                    error=ExtractionError("Could not read acquisition.", path=corrupt),
                 ),
             ),
             discovery_issues=(),
+            discovery_skips=(SkippedAcquisition(fresh, SkipReason.TOO_RECENT, "Modified 45 s ago (minimum 2 min)."),),
         )
         monkeypatch.setattr(extract_cli_module, "extract_batch", lambda *_args, **_kwargs: batch_result)
 
-        result = main(["extract", str(candidate.path)])
+        result = main(["extract", str(tmp_path)])
 
         captured = capsys.readouterr()
         assert result == 1
-        assert "skipped" in captured.out
-        assert "Thermo helper is not installed." in captured.err
-        assert "rawtrace-qc thermo install" in captured.err
+        assert captured.err == ""
+        assert captured.out.splitlines() == [
+            f"failed: {corrupt}",
+            "  Could not read acquisition.",
+            f"skipped: {fresh}",
+            "  Modified 45 s ago (minimum 2 min).",
+            f"succeeded: {good}",
+            f"  MS1: {trace}",
+            "Summary: 1 succeeded, 1 skipped, 1 failed, 0 discovery issue(s).",
+        ]
 
-    def test_discovery_issues_are_rendered_separately_and_fail_the_command(
-        self, tmp_path: Path, monkeypatch, capsys
-    ) -> None:
+    def test_thermo_setup_guidance_is_printed_once_after_the_report(self, tmp_path: Path, monkeypatch, capsys) -> None:
+        not_found = ThermoHelperNotFoundError("Thermo helper is not installed.")
+        outcomes = tuple(
+            BatchExtractionOutcome(
+                DiscoveryCandidate(tmp_path / name, Vendor.THERMO, "raw"),
+                ExtractionOutcomeStatus.SKIPPED,
+                error=not_found,
+            )
+            for name in ("a.raw", "b.raw")
+        )
+        command_error = ThermoHelperCommandError("Helper exited with 4.", returncode=4, stdout="", stderr="")
+        failed = BatchExtractionOutcome(
+            DiscoveryCandidate(tmp_path / "c.raw", Vendor.THERMO, "raw"),
+            ExtractionOutcomeStatus.FAILED,
+            error=command_error,
+        )
+        batch_result = BatchExtractionResult(outcomes=(*outcomes, failed), discovery_issues=())
+        monkeypatch.setattr(extract_cli_module, "extract_batch", lambda *_args, **_kwargs: batch_result)
+
+        result = main(["extract", str(tmp_path)])
+
+        output = capsys.readouterr().out
+        assert result == 1
+        assert output.count("Thermo helper is not ready.") == 3
+        assert output.count("Thermo helper is not installed.") == 1
+        assert output.count("rawtrace-qc thermo install`") == 1
+        assert output.count("Helper exited with 4.") == 1
+        assert output.count("rawtrace-qc thermo status") == 1
+        assert output.index("Thermo setup:") > output.index(str(tmp_path / "c.raw"))
+
+    def test_discovery_issues_are_reported_and_fail_the_command(self, tmp_path: Path, monkeypatch, capsys) -> None:
         candidate = DiscoveryCandidate(tmp_path / "sample.raw", Vendor.THERMO, "raw")
         issue = DiscoveryIssue(tmp_path / "unclassified", "No supported complete acquisitions were found.")
         batch_result = BatchExtractionResult(
@@ -146,12 +190,11 @@ class TestExtractCommand:
 
         result = main(["extract", str(issue.path)])
 
-        captured = capsys.readouterr()
+        output = capsys.readouterr().out
         assert result == 1
-        assert "succeeded" in captured.out
-        assert "Discovery issues:" in captured.err
-        assert str(issue.path) in captured.err
-        assert issue.message in captured.err
+        assert f"succeeded: {candidate.path}" in output
+        assert f"{issue.path}: {issue.message}" in output
+        assert "1 discovery issue(s)" in output
 
     def test_root_help_lists_registered_subcommands(self, capsys) -> None:
         result = main(["--help"])
