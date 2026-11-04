@@ -174,6 +174,7 @@ class TestFileExclusion:
         ("reason", "expected"),
         [
             (ExclusionReason.THERMO_NOT_READY, "Thermo Tool button"),
+            (ExclusionReason.THERMO_UNSUPPORTED, "cannot be read on this system"),
             (ExclusionReason.EXTRACTION_FAILED, "add it again"),
             (ExclusionReason.PROCESSING_FAILED, "add it again"),
         ],
@@ -209,6 +210,17 @@ class TestFileExclusion:
         assert selection.active_selected() == (bruker,)
         excluded = selection.excluded_selected()[0].exclusion
         assert excluded == FileExclusion(ExclusionReason.THERMO_NOT_READY, "not installed")
+
+    def test_unsupported_system_excludes_thermo_files_without_promising_their_return(self, tmp_path: Path) -> None:
+        selection = self._selection(tmp_path, "thermo.raw")
+
+        changed = selection.set_thermo_ready(False, "linux-x64 unsupported", supported=False)
+        selection._add_candidates((_candidate(tmp_path, "late.raw"),))
+
+        assert changed == 1
+        for item in selection.excluded_selected():
+            assert item.exclusion == FileExclusion(ExclusionReason.THERMO_UNSUPPORTED, "linux-x64 unsupported")
+            assert "automatically" not in item.exclusion.next_step
 
     def test_repeated_unready_check_updates_the_detail_without_counting_a_change(self, tmp_path: Path) -> None:
         selection = self._selection(tmp_path, "thermo.raw")

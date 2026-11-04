@@ -27,6 +27,7 @@ class ExclusionReason(StrEnum):
     """Name why a selected raw file cannot be part of a report."""
 
     THERMO_NOT_READY = "Thermo tool not ready"
+    THERMO_UNSUPPORTED = "Thermo not supported"
     EXTRACTION_FAILED = "Extraction failed"
     PROCESSING_FAILED = "Processing failed"
 
@@ -39,10 +40,20 @@ class FileExclusion:
     detail: str = ""
 
     @property
+    def caused_by_thermo_tool(self) -> bool:
+        """Return whether this exclusion follows from the Thermo helper state."""
+        return self.reason in {
+            ExclusionReason.THERMO_NOT_READY,
+            ExclusionReason.THERMO_UNSUPPORTED,
+        }
+
+    @property
     def next_step(self) -> str:
         """Return what the user can do about this exclusion."""
         if self.reason is ExclusionReason.THERMO_NOT_READY:
             return THERMO_SETUP_STEP
+        if self.reason is ExclusionReason.THERMO_UNSUPPORTED:
+            return "Thermo .raw files cannot be read on this system."
         return "Remove the file and add it again to retry."
 
 
@@ -227,7 +238,14 @@ class RawFileSelection:
         if item is not None:
             self._selected[key] = replace(item, exclusion=exclusion)
 
-    def set_thermo_ready(self, ready: bool, detail: str = "") -> int:
+    @property
+    def thermo_exclusion(self) -> FileExclusion | None:
+        """Return the exclusion applied to Thermo files, or None if they can be used."""
+        return self._thermo_exclusion
+
+    def set_thermo_ready(
+        self, ready: bool, detail: str = "", *, supported: bool = True
+    ) -> int:
         """Exclude or restore Thermo files according to the helper state.
 
         While the helper is not ready, every selected Thermo file is excluded,
@@ -238,18 +256,22 @@ class RawFileSelection:
         Args:
             ready: Whether the Thermo helper can be used.
             detail: Message explaining why the helper is not ready.
+            supported: If True (default), the user can set up the helper on this
+                system. Otherwise the exclusion says that it cannot be resolved.
 
         Returns:
             The number of files that were newly excluded or restored.
         """
-        self._thermo_exclusion = (
-            None if ready else FileExclusion(ExclusionReason.THERMO_NOT_READY, detail)
+        reason = (
+            ExclusionReason.THERMO_NOT_READY
+            if supported
+            else ExclusionReason.THERMO_UNSUPPORTED
         )
+        self._thermo_exclusion = None if ready else FileExclusion(reason, detail)
         changed = 0
         for key, item in self._selected.items():
             excluded_by_thermo = (
-                item.exclusion is not None
-                and item.exclusion.reason is ExclusionReason.THERMO_NOT_READY
+                item.exclusion is not None and item.exclusion.caused_by_thermo_tool
             )
             if ready and excluded_by_thermo:
                 self._selected[key] = replace(item, exclusion=None)

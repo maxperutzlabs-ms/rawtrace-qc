@@ -425,7 +425,7 @@ Reports can be temporary, in which case the GUI owns their temporary directories
 
 Thermo GUI reports use the same `ThermoExtractor` as the CLI, together with the GUI's trace cache. The tool button in the window header opens the Thermo Tool window, which shows the required helper version, whether it is installed, and whether its license is accepted. A dot on the button means the helper still needs setup. From the window you can download the pinned release or install it from a manually downloaded ZIP, which must be the exact archive named in the window, and show or accept the license. If the installed copy cannot be used, the same buttons replace the contents of its folder once the new archive has been verified. Accepting records acceptance for your user account and then displays the terms, so use Show license first to read them.
 
-The GUI always uses the managed helper installation; helpers at other paths are only available through the CLI and library. While the helper is not ready, all selected Thermo files are excluded, even if their traces are cached, and a report is generated from the remaining files. If no other files remain, a popup explains this and offers to open the Thermo Tool window.
+The GUI always uses the managed helper installation; helpers at other paths are only available through the CLI and library. While the helper is not ready, all selected Thermo files are excluded, even if their traces are cached, and a report is generated from the remaining files. On a system the helper does not support, they are marked `Thermo not supported` and stay excluded. If no other files remain, a popup explains this and offers to open the Thermo Tool window.
 
 ## Developer Guide
 

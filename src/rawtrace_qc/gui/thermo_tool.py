@@ -136,8 +136,13 @@ def thermo_tool_required_message(status: ThermoHelperStatus) -> str:
         ThermoHelperState.UNLICENSED: "Its license has not been accepted yet.",
         ThermoHelperState.NOT_INSTALLED: "It is not installed yet.",
         ThermoHelperState.INVALID_VERSION: "The installed copy cannot be used.",
-        ThermoHelperState.UNSUPPORTED_PLATFORM: ("It is not available on this system."),
     }
+    if status.state is ThermoHelperState.UNSUPPORTED_PLATFORM:
+        return (
+            "Reports with Thermo .raw files need the ThermoScanHeaderExtractor tool, "
+            "which is not available on this system. The Thermo files stay excluded. "
+            "The Thermo Tool window shows the details."
+        )
     return (
         "Reports with Thermo .raw files need the ThermoScanHeaderExtractor tool. "
         f"{reasons[status.state]}\n\n"

@@ -46,12 +46,14 @@ from rawtrace_qc.gui.thermo_tool import (
     thermo_tool_tooltip,
 )
 from rawtrace_qc.gui.workflow import (
-    THERMO_SETUP_STEP,
-    ExclusionReason,
     RawFileSelection,
     SelectedEntry,
 )
-from rawtrace_qc.thermo import ThermoHelperStatus, get_thermo_helper_status
+from rawtrace_qc.thermo import (
+    ThermoHelperState,
+    ThermoHelperStatus,
+    get_thermo_helper_status,
+)
 
 _EXCLUSION_COLUMN_WIDTH = 170
 _LOG_MAX_LINES = 5000
@@ -1523,10 +1525,14 @@ def create_window(
         def _log_added_exclusions(self, excluded_before: int) -> None:
             """Log Thermo files that were excluded as soon as they were added."""
             added = len(self._selection.excluded_selected()) - excluded_before
-            if added > 0:
+            self._log_thermo_exclusions(added, "added file(s)")
+
+        def _log_thermo_exclusions(self, count: int, files: str) -> None:
+            exclusion = self._selection.thermo_exclusion
+            if count > 0 and exclusion is not None:
                 self._log(
-                    f"Thermo tool not ready: {added} added file(s) excluded. "
-                    f"{THERMO_SETUP_STEP}"
+                    f"{exclusion.reason.value}: {count} {files} excluded. "
+                    f"{exclusion.next_step}"
                 )
 
         def _remove_selected(self) -> None:
@@ -1627,7 +1633,7 @@ def create_window(
                 and not status.is_ready
                 and any(
                     entry.exclusion is not None
-                    and entry.exclusion.reason is ExclusionReason.THERMO_NOT_READY
+                    and entry.exclusion.caused_by_thermo_tool
                     for entry in self._selection.selected
                 )
             ):
@@ -1659,16 +1665,14 @@ def create_window(
             self._thermo_status_task = None
             self.thermo_tool_button.setToolTip(thermo_tool_tooltip(status))
             self.thermo_tool_attention.setVisible(thermo_tool_needs_attention(status))
-            changed = self._selection.set_thermo_ready(status.is_ready, status.message)
-            if changed:
-                self._log(
-                    f"Thermo tool ready: {changed} file(s) restored"
-                    if status.is_ready
-                    else (
-                        f"Thermo tool not ready: {changed} file(s) excluded. "
-                        f"{THERMO_SETUP_STEP}"
-                    )
-                )
+            changed = self._selection.set_thermo_ready(
+                status.is_ready,
+                status.message,
+                supported=status.state is not ThermoHelperState.UNSUPPORTED_PLATFORM,
+            )
+            if status.is_ready and changed:
+                self._log(f"Thermo tool ready: {changed} file(s) restored")
+            self._log_thermo_exclusions(changed, "file(s)")
             self._refresh_selected()
 
         def _thermo_status_failed(self, message: str) -> None:

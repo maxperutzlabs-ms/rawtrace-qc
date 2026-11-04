@@ -17,7 +17,10 @@ from rawtrace_qc.errors import (
     ConfigurationError,
     OperationCancelledError,
     RawtraceError,
+    ThermoHelperCommandError,
     ThermoHelperError,
+    ThermoHelperExecutableNotFoundError,
+    ThermoHelperExecutionError,
 )
 from rawtrace_qc.extractors.common import is_valid_output_name
 from rawtrace_qc.gui.cache import TraceCache
@@ -230,11 +233,13 @@ def generate_report(
             )
         except OperationCancelledError:
             raise
-        except ThermoHelperError as error:
-            exclude(candidate, ExclusionReason.THERMO_NOT_READY, str(error))
-            continue
         except Exception as error:
-            exclude(candidate, ExclusionReason.EXTRACTION_FAILED, _error_detail(error))
+            reason = (
+                ExclusionReason.THERMO_NOT_READY
+                if _is_helper_setup_error(error)
+                else ExclusionReason.EXTRACTION_FAILED
+            )
+            exclude(candidate, reason, _error_detail(error))
             continue
         cache_hits += int(cached.cache_hit)
         extractions.append((candidate, cached.extraction))
@@ -280,6 +285,15 @@ def generate_report(
     return ReportGenerationResult(
         output_path, len(processed), cache_hits, tuple(included), tuple(excluded)
     )
+
+
+def _is_helper_setup_error(error: Exception) -> bool:
+    if isinstance(error, ThermoHelperExecutionError):
+        # ThermoExtractor only lets command errors through for setup exit codes.
+        return isinstance(
+            error, ThermoHelperCommandError | ThermoHelperExecutableNotFoundError
+        )
+    return isinstance(error, ThermoHelperError)
 
 
 def _error_detail(error: Exception) -> str:

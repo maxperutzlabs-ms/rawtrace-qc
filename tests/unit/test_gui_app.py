@@ -480,6 +480,24 @@ class TestReportStatusAndExclusions:
         assert "Thermo Tool button" in log
         assert "Thermo Tool button" in window.selected_list.item(0).toolTip()
 
+    def test_thermo_files_on_an_unsupported_system_are_logged_without_a_setup_step(
+        self, window, tmp_path: Path
+    ) -> None:
+        raw = tmp_path / "late.raw"
+        raw.write_bytes(b"x" * (2 * 1024 * 1024))
+        os.utime(raw, (0, 0))
+        window._set_thermo_status(
+            ThermoHelperStatus(ThermoHelperState.UNSUPPORTED_PLATFORM, None, None, False, "linux-x64 unsupported")
+        )
+
+        window._add_paths((raw,))
+
+        log = window.log_view.toPlainText()
+        assert "Thermo not supported: 1 added file(s) excluded" in log
+        assert "Thermo Tool button" not in log
+        assert "Thermo Tool button" not in window.selected_list.item(0).toolTip()
+        assert "linux-x64 unsupported" in window.selected_list.item(0).toolTip()
+
     def test_default_window_height_fits_the_screen(self, window) -> None:
         assert window.height() <= window.screen().availableGeometry().height()
 

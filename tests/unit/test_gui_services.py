@@ -16,7 +16,11 @@ from rawtrace_qc.errors import (
     ExtractionError,
     OperationCancelledError,
     ProcessingError,
+    ThermoHelperCommandError,
+    ThermoHelperExecutableNotFoundError,
+    ThermoHelperExecutionError,
     ThermoHelperLicenseError,
+    ThermoHelperOutputError,
 )
 from rawtrace_qc.extractors import BrukerExtractor, ThermoExtractor
 from rawtrace_qc.gui.cache import CacheResult, TraceCache
@@ -310,6 +314,38 @@ class TestReportGenerationWithBadFiles:
         result = generate_report(candidates, cache, options=self._options(tmp_path))
 
         assert result.excluded[0].exclusion.detail == expected
+
+    @pytest.mark.parametrize(
+        ("error", "reason"),
+        [
+            (ThermoHelperLicenseError("no license"), ExclusionReason.THERMO_NOT_READY),
+            (
+                ThermoHelperCommandError("no license", returncode=4, stdout="", stderr=""),
+                ExclusionReason.THERMO_NOT_READY,
+            ),
+            (ThermoHelperExecutableNotFoundError("gone", stdout="", stderr=""), ExclusionReason.THERMO_NOT_READY),
+            (ThermoHelperExecutionError("access denied", stdout="", stderr=""), ExclusionReason.EXTRACTION_FAILED),
+            (ThermoHelperOutputError("not UTF-8", stdout="", stderr=""), ExclusionReason.EXTRACTION_FAILED),
+        ],
+    )
+    def test_helper_errors_count_as_not_ready_only_if_setting_up_the_helper_can_solve_them(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: Exception, reason: ExclusionReason
+    ) -> None:
+        candidates = self._candidates(tmp_path, "good.raw", "bad.raw")
+        cache = self._cache(tmp_path, monkeypatch)
+        working_extract = cache.extract
+
+        def fake_extract(candidate: DiscoveryCandidate, extractor: object, **kwargs: object) -> CacheResult:
+            if candidate.path.name == "bad.raw":
+                raise error
+            return working_extract(candidate, extractor, **kwargs)
+
+        monkeypatch.setattr(cache, "extract", fake_extract)
+
+        result = generate_report(candidates, cache, options=self._options(tmp_path))
+
+        assert result.excluded[0].exclusion.reason is reason
+        assert result.excluded[0].exclusion.detail == str(error)
 
     def test_raises_when_every_file_is_excluded_and_writes_no_report(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

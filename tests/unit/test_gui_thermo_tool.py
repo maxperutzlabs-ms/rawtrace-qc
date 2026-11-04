@@ -163,6 +163,13 @@ class TestThermoToolText:
         assert "--agree-to-terms" not in message
         assert "untick" not in message
 
+    def test_required_message_promises_a_return_only_on_supported_systems(self) -> None:
+        supported = thermo_tool_required_message(_status(ThermoHelperState.NOT_INSTALLED))
+        unsupported = thermo_tool_required_message(_status(ThermoHelperState.UNSUPPORTED_PLATFORM))
+
+        assert "automatically" in supported
+        assert "automatically" not in unsupported
+
 
 class TestThermoAssetLabel:
     def test_shows_asset_name_of_host_runtime(self, monkeypatch: pytest.MonkeyPatch) -> None:
