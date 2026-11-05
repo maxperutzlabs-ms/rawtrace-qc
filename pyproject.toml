@@ -3,10 +3,33 @@ name = "rawtrace-qc"
 version = "0.1.0"
 description = "Extract TIC and scan-level traces from Thermo and Bruker mass spectrometry raw files and generate interactive HTML QC reports"
 readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [
     { name = "David M. Hollenstein", email = "hollenstein.david@gmail.com" }
 ]
 requires-python = ">=3.12"
+keywords = [
+    "bruker",
+    "mass-spectrometry",
+    "proteomics",
+    "quality-control",
+    "thermo",
+    "timstof",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Typing :: Typed",
+]
 dependencies = [
     "numpy>=1.26",
     "platformdirs>=4.0",
@@ -21,6 +44,11 @@ cli = [
 gui = [
     "pyside6>=6.8",
 ]
+
+[project.urls]
+Homepage = "https://github.com/maxperutzlabs-ms/rawtrace-qc"
+Repository = "https://github.com/maxperutzlabs-ms/rawtrace-qc"
+Issues = "https://github.com/maxperutzlabs-ms/rawtrace-qc/issues"
 
 [project.scripts]
 rawtrace-qc = "rawtrace_qc.cli:main"

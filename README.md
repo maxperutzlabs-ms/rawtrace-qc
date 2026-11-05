@@ -145,3 +145,7 @@ uv run pyrefly check
 ```
 
 Ruff formats the tests with a separate configuration that allows 120 characters in a line. We do not enforce linting rules for the tests.
+
+## License
+
+rawtrace-qc is licensed under the [Apache License 2.0](https://github.com/maxperutzlabs-ms/rawtrace-qc/blob/main/LICENSE). The Thermo tool is a separate program, so it has its own license terms.
