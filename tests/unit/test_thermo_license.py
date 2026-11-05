@@ -7,9 +7,10 @@ from pathlib import Path
 
 import pytest
 from rawtrace_qc import environment
-from rawtrace_qc.errors import ThermoHelperLicenseError, UnsupportedPlatformError
-from rawtrace_qc.thermo import accept_thermo_license, get_thermo_license_text
+from rawtrace_qc.errors import ThermoHelperLicenseError, ThermoHelperNotFoundError, UnsupportedPlatformError
+from rawtrace_qc.thermo import accept_thermo_license, get_thermo_license_text, managed_thermo_helper_directory
 from tests.support.mock_helper import MockThermoHelper, create_mock_helper_file
+from tests.support.thermo_helper import WIN_X64_SPECIFICATION
 
 
 @pytest.fixture(autouse=True)
@@ -55,6 +56,23 @@ class TestGetThermoLicenseText:
 
         with pytest.raises(ThermoHelperLicenseError, match="returned empty license text"):
             get_thermo_license_text(executable)
+
+
+class TestExplicitHelperPath:
+    @pytest.mark.parametrize("license_function", [get_thermo_license_text, accept_thermo_license])
+    def test_missing_explicit_path_raises_without_running_the_managed_helper(
+        self, license_function: Callable[..., object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        managed_dir = managed_thermo_helper_directory(WIN_X64_SPECIFICATION, data_directory=tmp_path)
+        create_mock_helper_file(managed_dir)
+        mock_runner = MockThermoHelper()
+        monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
+
+        with pytest.raises(ThermoHelperNotFoundError, match="does_not_exist"):
+            license_function(tmp_path / "does_not_exist", data_directory=tmp_path)
+
+        assert mock_runner.commands_run == []
+        assert mock_runner.license_accepted is False
 
 
 class TestAcceptThermoLicense:

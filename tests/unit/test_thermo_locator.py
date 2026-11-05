@@ -68,21 +68,24 @@ class TestFindThermoHelperPath:
 
         assert result == explicit_exe.resolve()
 
-    def test_falls_back_to_managed_install_when_explicit_path_does_not_exist(self, tmp_path: Path) -> None:
+    def test_raises_for_missing_explicit_path_even_when_managed_install_exists(self, tmp_path: Path) -> None:
         data_dir = tmp_path / "appdata"
         managed_dir = managed_thermo_helper_directory(WIN_X64_SPECIFICATION, data_directory=data_dir)
-        managed_exe = create_mock_helper_file(managed_dir)
+        create_mock_helper_file(managed_dir)
         non_existent = tmp_path / "does_not_exist" / "helper.exe"
 
-        result = find_thermo_helper_path(non_existent, data_directory=data_dir)
+        with pytest.raises(ThermoHelperNotFoundError, match="does_not_exist"):
+            find_thermo_helper_path(non_existent, data_directory=data_dir)
 
-        assert result == managed_exe.resolve()
+    def test_raises_for_explicit_folder_without_executable(self, tmp_path: Path) -> None:
+        empty_folder = tmp_path / "custom"
+        empty_folder.mkdir()
 
-    def test_returns_none_when_neither_explicit_nor_managed_exists(self, tmp_path: Path) -> None:
-        data_dir = tmp_path / "appdata"
-        non_existent = tmp_path / "custom" / "missing.exe"
+        with pytest.raises(ThermoHelperNotFoundError, match="custom"):
+            find_thermo_helper_path(empty_folder, data_directory=tmp_path / "appdata")
 
-        result = find_thermo_helper_path(non_existent, data_directory=data_dir)
+    def test_returns_none_when_no_explicit_path_and_no_managed_install_exist(self, tmp_path: Path) -> None:
+        result = find_thermo_helper_path(data_directory=tmp_path / "appdata")
 
         assert result is None
 
@@ -106,6 +109,21 @@ class TestGetThermoHelperStatus:
         assert "'linux-x64'" in status.message
         assert "['win-x64']" in status.message
         assert len(mock_runner.commands_run) == 0
+
+    def test_reports_missing_explicit_path_as_not_installed_without_using_managed_install(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        mock_runner = MockThermoHelper(license_accepted=True)
+        monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
+        managed_dir = managed_thermo_helper_directory(WIN_X64_SPECIFICATION, data_directory=tmp_path)
+        create_mock_helper_file(managed_dir)
+
+        status = get_thermo_helper_status(tmp_path / "does_not_exist", data_directory=tmp_path)
+
+        assert status.state is ThermoHelperState.NOT_INSTALLED
+        assert status.path is None
+        assert "does_not_exist" in status.message
+        assert mock_runner.commands_run == []
 
     def test_windows_arm64_host_resolves_the_win_x64_helper(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -331,6 +349,20 @@ class TestLocateThermoHelper:
         result = locate_thermo_helper(exe)
 
         assert result == exe.resolve()
+
+    def test_raises_not_found_for_missing_explicit_path_without_using_managed_install(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        data_dir = tmp_path / "appdata"
+        managed_dir = managed_thermo_helper_directory(WIN_X64_SPECIFICATION, data_directory=data_dir)
+        create_mock_helper_file(managed_dir)
+        mock_runner = MockThermoHelper(version=WIN_X64_SPECIFICATION.version, license_accepted=True)
+        monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
+
+        with pytest.raises(ThermoHelperNotFoundError, match="does_not_exist"):
+            locate_thermo_helper(tmp_path / "does_not_exist", data_directory=data_dir)
+
+        assert mock_runner.commands_run == []
 
     def test_explicit_path_takes_precedence_in_location_resolution(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

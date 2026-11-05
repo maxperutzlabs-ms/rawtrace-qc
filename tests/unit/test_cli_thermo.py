@@ -62,8 +62,47 @@ class TestThermoStatusCommand:
             expected_commands = [["--version"]] if state == "invalid_version" else [["--version"], []]
             assert [command[1:] for command in mock_helper.commands_run] == expected_commands
 
+    def test_status_reports_missing_helper_path_without_using_managed_helper(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        data_directory = tmp_path / "appdata"
+        _create_helper(data_directory)
+        mock_helper = MockThermoHelper(license_accepted=True)
+        monkeypatch.setattr(environment, "get_platform", lambda: "win32")
+        monkeypatch.setattr(environment, "get_machine", lambda: "AMD64")
+        monkeypatch.setattr(locator_module, "execute_helper_process", mock_helper)
+        helper_path = tmp_path / "does_not_exist"
+
+        result = main(["thermo", "status", "--helper-path", str(helper_path), "--data-directory", str(data_directory)])
+
+        output = capsys.readouterr().out
+        assert result == 1
+        assert "Thermo helper status: not_installed" in output
+        assert "does_not_exist" in output
+        assert mock_helper.commands_run == []
+
 
 class TestThermoSetupCommands:
+    def test_accept_license_reports_missing_helper_path_without_accepting(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        data_directory = tmp_path / "appdata"
+        _create_helper(data_directory)
+        mock_helper = MockThermoHelper()
+        monkeypatch.setattr(environment, "get_platform", lambda: "win32")
+        monkeypatch.setattr(environment, "get_machine", lambda: "AMD64")
+        monkeypatch.setattr(locator_module, "execute_helper_process", mock_helper)
+        helper_path = tmp_path / "does_not_exist"
+
+        result = main(
+            ["thermo", "accept-license", "--helper-path", str(helper_path), "--data-directory", str(data_directory)]
+        )
+
+        assert result == 1
+        assert "does_not_exist" in capsys.readouterr().err
+        assert mock_helper.commands_run == []
+        assert mock_helper.license_accepted is False
+
     def test_install_passes_offline_archive_and_data_directory_to_library(
         self,
         tmp_path: Path,

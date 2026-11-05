@@ -125,7 +125,9 @@ def get_thermo_helper_status(
     """Inspect the status of ThermoScanHeaderExtractor without side effects.
 
     Checks what is present, what version it is, and whether the license has
-    been accepted. If the helper is not installed, no process is executed.
+    been accepted. If the helper is not installed, no process is executed. An
+    `explicit_path` that does not lead to the executable is reported as
+    `NOT_INSTALLED`, without checking the managed installation.
 
     Args:
         explicit_path: Optional explicit executable or directory path. Defaults
@@ -150,25 +152,29 @@ def get_thermo_helper_status(
                 expected_version=THERMO_HELPER_RELEASE.version,
             )
 
-    candidate = find_thermo_helper_path(
-        explicit_path,
-        data_directory=data_directory,
-        specification=specification,
-    )
+    try:
+        candidate = find_thermo_helper_path(
+            explicit_path,
+            data_directory=data_directory,
+            specification=specification,
+        )
+    except ThermoHelperNotFoundError as error:
+        return ThermoHelperStatus(
+            state=ThermoHelperState.NOT_INSTALLED,
+            path=None,
+            version=None,
+            license_accepted=False,
+            message=str(error),
+            expected_version=specification.version,
+        )
 
     if candidate is None:
-        searched_paths: list[str] = []
-        if explicit_path is not None:
-            searched_paths.append(str(Path(explicit_path).expanduser()))
         managed_path = (
             managed_thermo_helper_directory(
                 specification, data_directory=data_directory
             )
             / specification.executable_name
         )
-        searched_paths.append(str(managed_path))
-        searched_summary = ", ".join(searched_paths)
-
         return ThermoHelperStatus(
             state=ThermoHelperState.NOT_INSTALLED,
             path=None,
@@ -176,7 +182,7 @@ def get_thermo_helper_status(
             license_accepted=False,
             message=(
                 f"ThermoScanHeaderExtractor executable was not found. "
-                f"Checked: {searched_summary}. Please install "
+                f"Checked: {managed_path}. Please install "
                 f"ThermoScanHeaderExtractor v{specification.version}."
             ),
             expected_version=specification.version,
@@ -261,11 +267,9 @@ def find_thermo_helper_path(
 ) -> Path | None:
     """Resolve the candidate ThermoScanHeaderExtractor path by priority.
 
-    Resolution order:
-    1. An explicitly supplied path, if provided and existing on disk.
-    2. The managed install path in the user data directory for the pinned version.
-
-    Does not execute the helper and returns None if neither candidate exists.
+    An explicitly supplied path is used exclusively, so a mistyped path never
+    selects a different helper. Without one, the managed install path in the user
+    data directory for the pinned version is used. Does not execute the helper.
 
     Args:
         explicit_path: Optional explicit executable or directory path. Defaults
@@ -276,12 +280,14 @@ def find_thermo_helper_path(
             specification for the current host runtime.
 
     Returns:
-        The resolved executable path if a file exists, or None if neither
-        location exists.
+        The resolved executable path, or None if no `explicit_path` is supplied
+        and the managed installation does not exist.
 
     Raises:
         UnsupportedPlatformError: If no specification is given and the current
             runtime has no pinned helper release.
+        ThermoHelperNotFoundError: If `explicit_path` is neither a file nor a
+            folder containing the executable.
     """
     if specification is None:
         specification = resolve_thermo_helper_specification()
@@ -294,6 +300,12 @@ def find_thermo_helper_path(
             candidate = explicit / specification.executable_name
             if candidate.is_file():
                 return candidate.resolve()
+        raise ThermoHelperNotFoundError(
+            f"ThermoScanHeaderExtractor was not found at helper path "
+            f"'{explicit}'. Supply the executable or a folder that contains "
+            f"{specification.executable_name!r}, or omit the path to use the "
+            "managed installation."
+        )
 
     managed_path = (
         managed_thermo_helper_directory(specification, data_directory=data_directory)
