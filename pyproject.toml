@@ -39,10 +39,10 @@ dependencies = [
 
 [project.optional-dependencies]
 cli = [
-    "cyclopts>=3.0",
+    "cyclopts>=4.8",
 ]
 gui = [
-    "pyside6>=6.8",
+    "pyside6>=6.11",
 ]
 
 [project.urls]
@@ -55,12 +55,12 @@ rawtrace-qc = "rawtrace_qc.cli:main"
 rawtrace-qc-gui = "rawtrace_qc.gui:main"
 
 [build-system]
-requires = ["uv_build>=0.11.21,<0.12.0"]
+requires = ["uv_build>=0.13.5,<0.14.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-    "cyclopts>=3.0",
+    "cyclopts>=4.8",
     "pyrefly==1.2.0",
     "pytest==9.1.1",
     "pytest-cov==7.1.0",

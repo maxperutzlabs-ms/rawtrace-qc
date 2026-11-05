@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12"
 
 [[package]]
@@ -415,18 +415,18 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "cyclopts", marker = "extra == 'cli'", specifier = ">=3.0" },
+    { name = "cyclopts", marker = "extra == 'cli'", specifier = ">=4.8" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "platformdirs", specifier = ">=4.0" },
     { name = "plotly", specifier = ">=6.0" },
     { name = "pyarrow", specifier = ">=14.0" },
-    { name = "pyside6", marker = "extra == 'gui'", specifier = ">=6.8" },
+    { name = "pyside6", marker = "extra == 'gui'", specifier = ">=6.11" },
 ]
 provides-extras = ["cli", "gui"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "cyclopts", specifier = ">=3.0" },
+    { name = "cyclopts", specifier = ">=4.8" },
     { name = "pyrefly", specifier = "==1.2.0" },
     { name = "pytest", specifier = "==9.1.1" },
     { name = "pytest-cov", specifier = "==7.1.0" },
