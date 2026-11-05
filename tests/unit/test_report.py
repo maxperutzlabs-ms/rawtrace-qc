@@ -231,6 +231,14 @@ class TestHtmlReport:
         assert f"https://cdn.plot.ly/plotly-{plotly_python_version}.min.js" not in html
         assert "retention_time_min" in html
 
+    def test_render_html_subtitle_counts_a_file_with_several_tables_once(self) -> None:
+        html = render_html(
+            [_processed_table(faims_cv=-50.0), _processed_table(faims_cv=-70.0)],
+            options=ReportOptions(asset_mode=ReportAssetMode.CDN),
+        )
+
+        assert "<p>1 file</p>" in html
+
     def test_render_html_preserves_all_metadata_rows(self) -> None:
         html = render_html(
             [_processed_table(label="first.d"), _processed_table(label="second.d")],

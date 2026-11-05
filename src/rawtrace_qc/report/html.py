@@ -80,7 +80,7 @@ def _render_document(report: ReportDocument) -> str:
   <div class="report-shell">
     <header class="report-header">
       <h1>{escape(report.title)}</h1>
-      <p>{len(report.traces)} processed table(s), {len(report.channels)} channel(s)</p>
+      <p>{_file_count_label(report)}</p>
     </header>
     <nav class="report-tabs" role="tablist" aria-label="Report views">
       {tabs}
@@ -98,6 +98,11 @@ def _render_document(report: ReportDocument) -> str:
 </body>
 </html>
 """
+
+
+def _file_count_label(report: ReportDocument) -> str:
+    file_count = len({trace.source_key for trace in report.traces})
+    return f"{file_count} file" if file_count == 1 else f"{file_count} files"
 
 
 def _render_tabs(report: ReportDocument) -> str:
@@ -294,7 +299,6 @@ def _plotly_asset(report: ReportDocument) -> str:
 
 def _report_payload(report: ReportDocument) -> dict[str, object]:
     return {
-        "title": report.title,
         "initial_channel": report.initial_channel,
         "initial_view": report.initial_view.value,
         "available_ms_levels": list(report.available_ms_levels),
@@ -550,7 +554,9 @@ def _css() -> str:
       top: calc(100% + 7px);
       left: 0;
       z-index: 20;
-      width: min(320px, calc(100vw - 36px));
+      width: max-content;
+      min-width: min(320px, calc(100vw - 36px));
+      max-width: calc(100vw - 36px);
       padding: 10px;
       background: var(--surface);
       border: 1px solid var(--line);
@@ -570,10 +576,11 @@ def _css() -> str:
     }
     .report-picker-options {
       max-height: 280px;
-      overflow-y: auto;
+      overflow: auto;
+      scrollbar-gutter: stable;
       padding-top: 6px;
     }
-    .report-picker-option {
+    .report-toolbar .report-picker-option {
       display: flex;
       align-items: flex-start;
       gap: 8px;
@@ -583,6 +590,7 @@ def _css() -> str:
       cursor: pointer;
       font-size: 12px;
       font-weight: 500;
+      white-space: nowrap;
     }
     .report-picker-option:hover { background: var(--accent-soft); }
     .report-picker-option input {
@@ -807,6 +815,12 @@ def _javascript(active_panel: str) -> str:
       var REFERENCE_COLOR = '#E73C40';
       var NORMAL_PLOT_HEIGHT = 560;
       var STACKED_TRACE_HEIGHT = 280;
+      var RETENTION_TIME_TITLE = 'Retention time (min)';
+      var LEGEND_GAP_PX = 78;
+      var LEGEND_BOTTOM_PADDING_PX = 12;
+      var DEFAULT_BOTTOM_MARGIN_PX = 160;
+      var NO_LEGEND_BOTTOM_MARGIN_PX = 64;
+      var PAIRWISE_TOP_MARGIN_PX = 100;
       var state = {{
         channel: data.initial_channel,
         msLevel: data.available_ms_levels.length
@@ -817,6 +831,7 @@ def _javascript(active_panel: str) -> str:
         referenceTrace: null,
         selectedTraceIndices: null,
         comparisonTrace: null,
+        legendHeight: 59,
         sorts: [
           {{field: 'acquisition_start_time', direction: 1}},
           {{field: 'rawfile_name', direction: 1}}
@@ -1111,7 +1126,8 @@ def _javascript(active_panel: str) -> str:
           return trace.table_index === state.comparisonTrace;
         }});
         if (!referenceTrace || !comparisonTrace) return [];
-        return [comparisonTrace, referenceTrace];
+        // Plotly draws later traces on top, so the reference stays behind.
+        return [referenceTrace, comparisonTrace];
       }}
       function cycleComparison(direction) {{
         if (state.view !== 'pairwise' || state.referenceTrace === null) return;
@@ -1153,13 +1169,15 @@ def _javascript(active_panel: str) -> str:
             size: 12
           }},
           title: {{
-            text: data.title,
+            text: 'MS' + state.msLevel + ' ' + String.fromCharCode(183) + ' '
+              + (channelSpec.label || state.channel),
             x: 0.02,
             xanchor: 'left',
             font: {{
               family: '"Aptos Display", "Aptos", "Segoe UI", sans-serif',
               color: '#063853',
-              size: 16
+              size: 16,
+              weight: 600
             }}
           }},
           margin: {{l: 78, r: 24, t: 58, b: 82}},
@@ -1170,7 +1188,7 @@ def _javascript(active_panel: str) -> str:
             font: {{color: '#ffffff'}}
           }},
           xaxis: {{
-            title: 'Retention time (min)',
+            title: {{text: RETENTION_TIME_TITLE}},
             showgrid: true,
             gridcolor: '#dce8eb',
             zerolinecolor: '#b9ccd2',
@@ -1178,7 +1196,7 @@ def _javascript(active_panel: str) -> str:
             ticks: 'outside'
           }},
           yaxis: {{
-            title: channelSpec.y_axis_title || 'Intensity',
+            title: {{text: channelSpec.y_axis_title || 'Intensity'}},
             showgrid: true,
             gridcolor: '#dce8eb',
             zerolinecolor: '#b9ccd2',
@@ -1189,7 +1207,6 @@ def _javascript(active_panel: str) -> str:
           legend: {{
             orientation: 'h',
             x: 0,
-            y: -0.22,
             xanchor: 'left',
             yanchor: 'top',
             bgcolor: 'rgba(255, 255, 255, .9)',
@@ -1354,7 +1371,53 @@ def _javascript(active_panel: str) -> str:
         plot.on('plotly_legendclick', toggleLegendTrace);
         plot.rawtraceLegendClickBound = true;
       }}
-      function render() {{
+      function addPairwiseHeader(layout, referenceTrace, comparisonTrace) {{
+        function row(role, trace) {{
+          return '<span style="color:' + traceColor(trace) + '">'
+            + String.fromCharCode(9632) + '</span> ' + role + ': ' + trace.name;
+        }}
+        layout.margin.t = PAIRWISE_TOP_MARGIN_PX;
+        layout.annotations = [{{
+          text: row('Reference', referenceTrace) + '<br>'
+            + row('Comparison', comparisonTrace),
+          x: 0,
+          y: 1,
+          xref: 'paper',
+          yref: 'paper',
+          xanchor: 'left',
+          yanchor: 'bottom',
+          yshift: 4,
+          align: 'left',
+          showarrow: false,
+          font: {{size: 12, color: '#163342', weight: 600}}
+        }}];
+      }}
+      function applyBottomLayout(layout, showsLegend) {{
+        layout.showlegend = showsLegend;
+        if (!showsLegend) {{
+          layout.margin.b = NO_LEGEND_BOTTOM_MARGIN_PX;
+          plot.style.height = layout.height + 'px';
+          plot.style.minHeight = layout.height + 'px';
+          return;
+        }}
+        layout.margin.b = LEGEND_GAP_PX + state.legendHeight
+          + LEGEND_BOTTOM_PADDING_PX;
+        if (!isPlotFullscreen()) {{
+          layout.height += Math.max(
+            0,
+            layout.margin.b - DEFAULT_BOTTOM_MARGIN_PX
+          );
+        }}
+        plot.style.height = layout.height + 'px';
+        plot.style.minHeight = layout.height + 'px';
+        layout.legend.y = -LEGEND_GAP_PX
+          / (layout.height - layout.margin.t - layout.margin.b);
+      }}
+      function measuredLegendHeight() {{
+        var background = plot.querySelector('.legend .bg');
+        return background ? Number(background.getAttribute('height')) : 0;
+      }}
+      function render(isLegendRefit) {{
         updateMetadataRows();
         updateSortIndicators();
         if (!plot || !window.Plotly || !state.channel) return;
@@ -1383,8 +1446,15 @@ def _javascript(active_panel: str) -> str:
             : 'Select at least one trace to display.';
           addEmptyMessage(layout, emptyMessage);
         }}
+        var showsLegend = state.view === 'overlay' && traces.length > 0;
+        if (state.view === 'pairwise' && traces.length) {{
+          addPairwiseHeader(layout, traces[0], traces[1]);
+        }}
         if (state.view === 'stacked' && traces.length) {{
-          var stackedHeight = traces.length * STACKED_TRACE_HEIGHT;
+          var stackedHeight = Math.max(
+            NORMAL_PLOT_HEIGHT,
+            traces.length * STACKED_TRACE_HEIGHT
+          );
           var displayHeight = fullscreenPlotHeight(stackedHeight);
           plot.style.height = displayHeight + 'px';
           plot.style.minHeight = displayHeight + 'px';
@@ -1395,12 +1465,30 @@ def _javascript(active_panel: str) -> str:
             pattern: 'independent',
             roworder: 'top to bottom'
           }};
+          var stackedYTitle = layout.yaxis.title;
           delete layout.xaxis;
           delete layout.yaxis;
+          layout.margin.t = 76;
+          layout.annotations = [];
           traces = traces.map(function (trace, index) {{
             var suffix = index === 0 ? '' : String(index + 1);
+            layout.annotations.push({{
+              text: '<span style="color:' + traceColor(trace) + '">'
+                + String.fromCharCode(9632) + '</span> ' + trace.name,
+              x: 0,
+              y: 1,
+              xref: 'x' + suffix + ' domain',
+              yref: 'y' + suffix + ' domain',
+              xanchor: 'left',
+              yanchor: 'bottom',
+              yshift: 2,
+              showarrow: false,
+              font: {{size: 12, color: '#163342', weight: 600}}
+            }});
             layout['xaxis' + suffix] = {{
-              title: index === traces.length - 1 ? 'Retention time (min)' : '',
+              title: {{
+                text: index === traces.length - 1 ? RETENTION_TIME_TITLE : ''
+              }},
               matches: index ? 'x' : undefined,
               showgrid: true,
               gridcolor: '#dce8eb',
@@ -1409,7 +1497,7 @@ def _javascript(active_panel: str) -> str:
               ticks: 'outside'
             }};
             layout['yaxis' + suffix] = {{
-              title: trace.name,
+              title: stackedYTitle,
               showgrid: true,
               gridcolor: '#dce8eb',
               zerolinecolor: '#b9ccd2',
@@ -1417,29 +1505,42 @@ def _javascript(active_panel: str) -> str:
               exponentformat: 'E',
               ticks: 'outside'
             }};
-            legendTraces.push(makeLegendTrace(trace));
             return makeTrace(trace, index, 'x' + suffix, 'y' + suffix);
           }});
         }} else {{
           var displayHeight = fullscreenPlotHeight(NORMAL_PLOT_HEIGHT);
           traces = traces.map(function (trace, index) {{
-            legendTraces.push(makeLegendTrace(trace));
+            if (showsLegend) legendTraces.push(makeLegendTrace(trace));
             return makeTrace(trace, index, null, null);
           }});
           plot.style.height = displayHeight + 'px';
           plot.style.minHeight = displayHeight + 'px';
           layout.height = displayHeight;
         }}
+        applyBottomLayout(layout, showsLegend);
         var reactResult = Plotly.react(
           plot,
           traces.concat(legendTraces),
           layout,
           {{responsive: true, displaylogo: false, scrollZoom: true}}
         );
-        if (reactResult && typeof reactResult.then === 'function') {{
-          reactResult.then(bindLegendClick);
-        }} else {{
+        function afterPlot() {{
           bindLegendClick();
+          if (
+            !showsLegend
+            || isLegendRefit === true
+            || plot.offsetParent === null
+          ) return;
+          var legendHeight = measuredLegendHeight();
+          if (legendHeight !== state.legendHeight) {{
+            state.legendHeight = legendHeight;
+            render(true);
+          }}
+        }}
+        if (reactResult && typeof reactResult.then === 'function') {{
+          reactResult.then(afterPlot);
+        }} else {{
+          afterPlot();
         }}
       }}
       function activateTab(button) {{
@@ -1497,6 +1598,11 @@ def _javascript(active_panel: str) -> str:
           closeSelectedMenu();
         }} else if (selectedMenu) {{
           selectedMenu.hidden = false;
+          selectedMenu.style.left = '';
+          var viewportWidth = document.documentElement.clientWidth;
+          var overflow = selectedMenu.getBoundingClientRect().right
+            - (viewportWidth - 18);
+          if (overflow > 0) selectedMenu.style.left = -overflow + 'px';
           selectedToggle.setAttribute('aria-expanded', 'true');
         }}
       }});
