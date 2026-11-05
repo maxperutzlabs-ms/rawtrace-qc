@@ -1,5 +1,9 @@
 # rawtrace-qc
 
+[![CI](https://github.com/maxperutzlabs-ms/rawtrace-qc/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/maxperutzlabs-ms/rawtrace-qc/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/rawtrace-qc)](https://pypi.org/project/rawtrace-qc/)
+[![Python versions](https://img.shields.io/pypi/pyversions/rawtrace-qc)](https://pypi.org/project/rawtrace-qc/)
+
 rawtrace-qc creates interactive HTML reports from mass spectrometry raw files, so that you can compare runs and spot problems in them. You select Thermo `.raw` files or Bruker timsTOF `.d` folders in a desktop application, and the report then opens in your browser.
 
 ![Dragging five raw files into rawtrace-qc, generating a report and viewing it in the browser](https://raw.githubusercontent.com/maxperutzlabs-ms/rawtrace-qc/media/docs/screenshots/gui-create-report-v1.gif)
