@@ -138,13 +138,10 @@ Run the tests and the code checks with these commands:
 
 ```bash
 uv run pytest
-uv run ruff check src
-uv run ruff format --check src
-uv run ruff format --check tests
+uv run ruff check .
+uv run ruff format --check .
 uv run pyrefly check
 ```
-
-Ruff formats the tests with a separate configuration that allows 120 characters in a line. We do not enforce linting rules for the tests.
 
 ## License
 
