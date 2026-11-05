@@ -2054,7 +2054,9 @@ def _load_qt() -> tuple[Any, Any, Any]:
         )
     except ModuleNotFoundError as error:
         raise RuntimeError(
-            "The GUI requires PySide6. Install it with `uv sync --extra gui`."
+            "The rawtrace-qc desktop application requires the optional 'gui' "
+            'extra. Install it with `pip install "rawtrace-qc[gui]"` or '
+            '`uv tool install "rawtrace-qc[gui]"`.'
         ) from error
 
 

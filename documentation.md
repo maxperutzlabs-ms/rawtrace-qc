@@ -346,7 +346,6 @@ Media files are on the separate `media` branch in `docs/screenshots/`, so that t
 - `ProcessingOptions` has no channel filter. The report selects the channels.
 - Precision is not reduced for compact HTML output.
 - The cache key does not contain the helper version, so a helper change within one `major.minor` version reuses existing entries.
-- The error for a missing PySide6 in `gui/app.py` recommends only `uv sync --extra gui`, even to users who installed with pip or `uv tool`.
 
 ## Maintain this document
 
