@@ -121,7 +121,7 @@ class TestTraceCache:
             cache.extract(candidate, InterruptedExtractor())
         complete = cache.extract(candidate, BrukerExtractor())
 
-        assert list((tmp_path / "cache").iterdir()) == [complete.extraction.ms1_path.parent]
+        assert list(cache.directory.iterdir()) == [complete.extraction.ms1_path.parent]
         assert complete.cache_hit is False
         assert complete.extraction.msn_path.is_file()
 
@@ -146,7 +146,48 @@ class TestTraceCache:
         with pytest.raises(ExtractionError):
             cache.extract(_bruker_candidate(source), BrukerExtractor())
 
-        assert list((tmp_path / "cache").iterdir()) == []
+        assert list(cache.directory.iterdir()) == []
+
+    @pytest.mark.parametrize(
+        ("version", "folder"),
+        [("1.2.3", "1.2"), ("0.10.0", "0.10"), ("1.2.0rc1", "1.2"), ("1.2", "1.2")],
+    )
+    def test_entries_are_stored_in_a_folder_named_after_the_major_and_minor_version(
+        self, bruker_fixture: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: str, folder: str
+    ) -> None:
+        monkeypatch.setattr("rawtrace_qc.gui.cache.__version__", version)
+
+        result = TraceCache(tmp_path / "cache").extract(_bruker_candidate(bruker_fixture), BrukerExtractor())
+
+        assert result.extraction.ms1_path.parent.parent == (tmp_path / "cache" / folder).resolve()
+
+    def test_patch_version_bump_reuses_cached_traces(
+        self, bruker_fixture: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        candidate = _bruker_candidate(bruker_fixture)
+        monkeypatch.setattr("rawtrace_qc.gui.cache.__version__", "1.2.3")
+        first = TraceCache(tmp_path / "cache").extract(candidate, BrukerExtractor())
+
+        monkeypatch.setattr("rawtrace_qc.gui.cache.__version__", "1.2.4")
+        second = TraceCache(tmp_path / "cache").extract(candidate, BrukerExtractor())
+
+        assert second.cache_hit is True
+        assert second.extraction == first.extraction
+
+    @pytest.mark.parametrize("new_version", ("1.3.0", "2.0.0"))
+    def test_minor_or_major_version_bump_extracts_again_and_keeps_the_old_folder(
+        self, bruker_fixture: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, new_version: str
+    ) -> None:
+        candidate = _bruker_candidate(bruker_fixture)
+        monkeypatch.setattr("rawtrace_qc.gui.cache.__version__", "1.2.3")
+        first = TraceCache(tmp_path / "cache").extract(candidate, BrukerExtractor())
+
+        monkeypatch.setattr("rawtrace_qc.gui.cache.__version__", new_version)
+        second = TraceCache(tmp_path / "cache").extract(candidate, BrukerExtractor())
+
+        assert second.cache_hit is False
+        assert second.extraction.ms1_path != first.extraction.ms1_path
+        assert first.extraction.ms1_path.is_file()
 
 
 class TestReportGeneration:

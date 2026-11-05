@@ -8,6 +8,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from rawtrace_qc import __version__
 from rawtrace_qc.discovery import DiscoveryCandidate
 from rawtrace_qc.errors import ArtifactValidationError, ConfigurationError
 from rawtrace_qc.extractors.protocol import Extractor, PrecisionMode
@@ -32,8 +33,16 @@ class TraceCache:
     """Store validated trace artifacts under content-metadata cache keys."""
 
     def __init__(self, directory: Path) -> None:
-        """Create a cache rooted at `directory`."""
-        self.directory = Path(directory).expanduser().resolve()
+        """Create a cache in a `<major>.<minor>` subfolder of `directory`.
+
+        Each `rawtrace-qc` major.minor version keeps its own entries, so traces
+        from another such version are not reused. Patch releases share a folder.
+
+        Args:
+            directory: Root directory of the trace cache.
+        """
+        major_minor = ".".join(__version__.split(".")[:2])
+        self.directory = Path(directory).expanduser().resolve() / major_minor
 
     def extract(
         self,
