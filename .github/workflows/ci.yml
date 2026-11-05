@@ -70,9 +70,9 @@ jobs:
     - name: Install dependencies
       run: uv sync --locked --all-extras
 
-    # The Thermo helper is Windows-only for now; extend the condition once it
-    # supports other platforms. Accepting the license here is intentional so
-    # the Thermo integration tests run instead of being skipped.
+    # rawtrace-qc pins the Thermo helper only for Windows for now; extend the
+    # condition once it pins other platforms. Accepting the license here is
+    # intentional so the Thermo integration tests run instead of being skipped.
     - name: Install Thermo helper and accept license
       if: runner.os == 'Windows'
       run: |
