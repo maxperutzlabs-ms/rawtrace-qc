@@ -1,5 +1,6 @@
-# Lints, type-checks, and runs the test suite on all supported platforms and
-# Python versions using the locked dependencies from `uv.lock`.
+# Lints, type-checks, and runs the test suite on all supported platforms using
+# the locked dependencies from `uv.lock`. Linux and Windows run every supported
+# Python version, and macOS runs only the latest.
 
 name: CI
 on:
@@ -51,6 +52,12 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.12", "3.13", "3.14"]
+        # macOS runners are often unavailable, so test only the latest Python.
+        exclude:
+        - os: macos-latest
+          python-version: "3.12"
+        - os: macos-latest
+          python-version: "3.13"
     env:
       # Run Qt without a display server so the GUI tests work on headless runners.
       QT_QPA_PLATFORM: offscreen
