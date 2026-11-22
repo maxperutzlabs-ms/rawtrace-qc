@@ -78,7 +78,8 @@ CI in `.github/workflows/ci.yml` runs the following checks with the locked depen
 
 - `ruff check .` and `ruff format --check .`.
 - `pyrefly check`, which covers only `src`.
-- `pytest --cov` on Ubuntu, Windows, and macOS with Python 3.12, 3.13, and 3.14.
+- `pytest -m "not network" --cov` on Ubuntu with Python 3.12, 3.13, and 3.14, on Windows with Python 3.13 and 3.14, and on macOS with Python 3.14.
+- The full test suite, including the `network` tests, in a separate `test-full` job on Windows with Python 3.12. Only this job downloads and installs the Thermo helper.
 
 Ruff settings differ between source and tests. Source files use 88 characters and the rules `E`, `F`, `I`, `UP`, and `B`. Because `tests/ruff.toml` replaces this configuration, tests use 120 characters and the default Ruff rules.
 
@@ -329,7 +330,7 @@ Upstream archives exist for Linux and macOS on x64 and arm64, so these steps sho
 
 1. Pin the assets in `thermo/specification.py`. The executable has no `.exe` extension on these platforms.
 2. Add `.tar.gz` support, because `ArchiveFormat` and the extraction code currently handle only ZIP files.
-3. Extend the Thermo install step in `ci.yml`, which currently runs only on Windows.
+3. Add the OS to the `test-full` job in `ci.yml`, which currently runs only on Windows, and exclude the same OS and Python combination from `test-no-network`.
 
 ### Add reports to the CLI
 

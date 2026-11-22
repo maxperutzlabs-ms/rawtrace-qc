@@ -1,6 +1,7 @@
 # Lints, type-checks, and runs the test suite on all supported platforms using
 # the locked dependencies from `uv.lock`. Linux and Windows run every supported
-# Python version, and macOS runs only the latest.
+# Python version, and macOS runs only the latest. Tests marked `network` run
+# only in the `test-full` job, so only one job downloads the Thermo helper.
 
 name: CI
 on:
@@ -43,8 +44,8 @@ jobs:
     - name: Pyrefly
       run: uv run pyrefly check
 
-  test:
-    name: Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
+  test-no-network:
+    name: Test without network tests (${{ matrix.os }}, Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -52,12 +53,15 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.12", "3.13", "3.14"]
-        # macOS runners are often unavailable, so test only the latest Python.
         exclude:
+        # macOS runners are often unavailable, so test only the latest Python.
         - os: macos-latest
           python-version: "3.12"
         - os: macos-latest
           python-version: "3.13"
+        # Covered by the `test-full` job.
+        - os: windows-latest
+          python-version: "3.12"
     env:
       # Run Qt without a display server so the GUI tests work on headless runners.
       QT_QPA_PLATFORM: offscreen
@@ -77,11 +81,43 @@ jobs:
     - name: Install dependencies
       run: uv sync --locked --all-extras
 
-    # rawtrace-qc pins the Thermo helper only for Windows for now; extend the
-    # condition once it pins other platforms. Accepting the license here is
-    # intentional so the Thermo integration tests run instead of being skipped.
+    - name: Run tests
+      run: uv run pytest -m "not network" --cov --cov-report=term
+
+  # Runs the whole suite, including the `network` tests, on the oldest supported
+  # Python. Add an OS here once rawtrace-qc pins the Thermo helper for it, and
+  # exclude the same combination from `test-no-network`.
+  test-full:
+    name: Full test (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest]
+        python-version: ["3.12"]
+    env:
+      # Run Qt without a display server so the GUI tests work on headless runners.
+      QT_QPA_PLATFORM: offscreen
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Install Qt system libraries
+      if: runner.os == 'Linux'
+      run: sudo apt-get update && sudo apt-get install -y libegl1 libxkbcommon0 libfontconfig1
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install dependencies
+      run: uv sync --locked --all-extras
+
+    # Accepting the license here is intentional so the Thermo integration tests
+    # run instead of being skipped.
     - name: Install Thermo helper and accept license
-      if: runner.os == 'Windows'
       run: |
         uv run rawtrace-qc thermo install
         uv run rawtrace-qc thermo accept-license
