@@ -203,7 +203,7 @@ All extractors share this behavior:
 | `scan_id`, `retention_time_sec`, `ms_level` | Required, no nulls |
 | `total_ion_current`, `base_peak_intensity` | Optional, a null means a failed row |
 | `faims_cv` | Optional, either all null or all finite numbers |
-| `injection_time_ms`, `base_peak_mz`, `polarity`, `precursor_mz`, `isolation_window_lower_mz`, `isolation_window_upper_mz`, `charge_state`, `collision_energy`, `activation_type` | Reserved, not implemented |
+| `injection_time_ms`, `base_peak_mz`, `polarity`, `precursor_mz`, `isolation_window_lower_mz`, `isolation_window_upper_mz` | Reserved, not implemented |
 
 Parquet metadata has required and optional fields:
 

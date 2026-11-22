@@ -76,24 +76,6 @@ TRACE_COLUMNS = (
         required=False,
         support=ColumnSupport.RESERVED,
     ),
-    ColumnDefinition(
-        "charge_state",
-        ColumnLogicalType.INTEGER,
-        required=False,
-        support=ColumnSupport.RESERVED,
-    ),
-    ColumnDefinition(
-        "collision_energy",
-        ColumnLogicalType.FLOAT,
-        required=False,
-        support=ColumnSupport.RESERVED,
-    ),
-    ColumnDefinition(
-        "activation_type",
-        ColumnLogicalType.TEXT,
-        required=False,
-        support=ColumnSupport.RESERVED,
-    ),
 )
 
 TRACE_COLUMN_BY_NAME = {column.name: column for column in TRACE_COLUMNS}
