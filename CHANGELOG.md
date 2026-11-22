@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- The scan-trace specification in `docs/scan-trace-spec.md`.
+
+### Changed
+- The trace schema no longer reserves the columns `charge_state`, `collision_energy`, and `activation_type`. They are out of scope for now.
+
 ## [0.1.0] - 2026-11-05
 
 ### Added
