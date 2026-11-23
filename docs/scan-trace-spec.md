@@ -1,6 +1,6 @@
 ---
 title: Scan-Trace Parquet Specification
-document_version: "1.1"
+document_version: "1.2"
 schema_version: "1"
 reference_validator: rawtrace_qc.traces.validate_trace
 ---
@@ -138,7 +138,7 @@ Fixed-width regardless of mode: `faims_cv`, `injection_time_ms` are **always 32-
 | `precision_mode` | `"low"`/`"high"` | §8. |
 | `row_granularity` | `"spectrum"`/`"frame-aggregate"` | §7. Always `"spectrum"` in MS1 file. |
 | `source_filename` | `"sample.raw"` or `"sample.d"` | Original source filename, including its extension. |
-| `source_id` | `"a_unique_id235124"` | Stable run identifier as a string when available: Thermo, for example serial number combined with RAW `CreationDate`; Bruker `AnalysisId`. The key is omitted if no identifier is available. |
+| `source_id` | `"MA10459C_20260930114656"` | Identifies the run. A producer writes the same value in both files of a run, and the same value every time the run is extracted, on any computer and in any time zone. Different runs get different values. Consumers may compare values but must not parse them. Thermo: instrument serial number and RAW creation time (`yyyyMMddHHmmss`, the clock time of the acquisition computer), joined by `_`. Bruker: `AnalysisId` from `GlobalMetadata`. The key is omitted if no identifier is available. |
 | `acquisition_path` | `"D:\\Data\\Acquisitions"` | Folder recorded by vendor metadata where the original file was acquired, not its current location. |
 | `acquisition_start_time` | `"2026-07-31T12:34:56Z"` or `"2026-07-31T12:34:56"` | Acquisition start from **vendor metadata** (not filesystem), ISO-8601 without fractional seconds. Ends with `Z` (UTC) when the vendor records an absolute time (Bruker). Has no time zone suffix when the vendor records only the local clock time of the acquisition computer (Thermo); such a value is in an unknown time zone and must not be read as UTC. |
 | `generator` | `"ThermoScanHeaderExtractor/2.1.0"` | Provenance. |
