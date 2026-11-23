@@ -1,6 +1,6 @@
 ---
 title: Scan-Trace Parquet Specification
-document_version: "1.0"
+document_version: "1.1"
 schema_version: "1"
 reference_validator: rawtrace_qc.traces.validate_trace
 ---
@@ -28,7 +28,7 @@ The contract does not fix exact numeric bit widths except where §5/§8 state ot
 <original-name>.ms1-trace.parquet
 <original-name>.msn-trace.parquet
 ```
-The original name includes its extension (`.raw`/`.d`) so the source is unambiguous. The `.msn-trace.parquet` file is omitted for MS1-only acquisitions (no empty file). An MS1-capable run with zero recorded MS1 spectra still writes a valid zero-row `.ms1-trace.parquet`; a run with zero MSn spectra omits the MSn file.
+The original name includes its extension (`.raw`/`.d`) so the source is unambiguous. A file is written only for an MS level with at least one row; producers MUST NOT write zero-row files. A run without MSn spectra therefore has no `.msn-trace.parquet`, and a run without MS1 spectra has no `.ms1-trace.parquet`.
 
 **Compression:** All column chunks MUST be Snappy-compressed.
 
@@ -138,9 +138,9 @@ Fixed-width regardless of mode: `faims_cv`, `injection_time_ms` are **always 32-
 | `precision_mode` | `"low"`/`"high"` | §8. |
 | `row_granularity` | `"spectrum"`/`"frame-aggregate"` | §7. Always `"spectrum"` in MS1 file. |
 | `source_filename` | `"sample.raw"` or `"sample.d"` | Original source filename, including its extension. |
-| `source_id` | `"a_unique_id235124"` or `null` | Stable run identifier as a string when available: Thermo, for example serial number combined with RAW `CreationDate`; Bruker `AnalysisId`; `null` if unavailable. |
+| `source_id` | `"a_unique_id235124"` | Stable run identifier as a string when available: Thermo, for example serial number combined with RAW `CreationDate`; Bruker `AnalysisId`. The key is omitted if no identifier is available. |
 | `acquisition_path` | `"D:\\Data\\Acquisitions"` | Folder recorded by vendor metadata where the original file was acquired, not its current location. |
-| `acquisition_start_time` | `"2026-07-31T12:34:56Z"` | Acquisition start from **vendor metadata** (not filesystem), ISO-8601 UTC. |
+| `acquisition_start_time` | `"2026-07-31T12:34:56Z"` or `"2026-07-31T12:34:56"` | Acquisition start from **vendor metadata** (not filesystem), ISO-8601 without fractional seconds. Ends with `Z` (UTC) when the vendor records an absolute time (Bruker). Has no time zone suffix when the vendor records only the local clock time of the acquisition computer (Thermo); such a value is in an unknown time zone and must not be read as UTC. |
 | `generator` | `"ThermoScanHeaderExtractor/2.1.0"` | Provenance. |
 | `extracted_at` | `"2026-07-31T12:34:56Z"` | Extraction time (ISO-8601 UTC). |
 
