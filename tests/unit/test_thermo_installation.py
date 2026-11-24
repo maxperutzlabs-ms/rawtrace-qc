@@ -116,18 +116,6 @@ class TestInstallThermoHelper:
         assert (executable.parent / "LICENSE.txt").read_bytes() == b"license"
         _assert_no_staging_directories(specification)
 
-    def test_installs_below_version_and_runtime_directories(
-        self, tmp_path: Path, isolated_data_directory: Path
-    ) -> None:
-        archive_path, specification = _create_archive(tmp_path)
-
-        executable = install_thermo_helper(archive_path, specification=specification)
-
-        expected_directory = (
-            isolated_data_directory / "tools" / "thermoscanheaderextractor" / specification.version / "win-x64"
-        )
-        assert executable == expected_directory.resolve() / specification.executable_name
-
     def test_writes_runtime_into_install_manifest(self, tmp_path: Path) -> None:
         archive_path, specification = _create_archive(tmp_path)
 
@@ -420,7 +408,7 @@ class TestInstallThermoHelper:
         original_rename = Path.rename
 
         def fail_rename_of_managed_directory(self: Path, target: Path) -> Path:
-            if self == managed_directory.resolve():
+            if self == managed_directory:
                 raise PermissionError("in use")
             return original_rename(self, target)
 

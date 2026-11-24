@@ -145,10 +145,10 @@ class TestGetThermoHelperStatus:
         assert len(mock_runner.commands_run) == 0
 
     def test_not_installed_message_names_the_runtime_specific_managed_path(
-        self, isolated_data_directory: Path, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", MockThermoHelper())
-        legacy_dir = isolated_data_directory / "tools" / WIN_X64_SPECIFICATION.tool_name / WIN_X64_SPECIFICATION.version
+        legacy_dir = managed_thermo_helper_directory(WIN_X64_SPECIFICATION).parent
         create_mock_helper_file(legacy_dir)
 
         status = get_thermo_helper_status()

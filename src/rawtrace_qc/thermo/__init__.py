@@ -19,15 +19,17 @@ from rawtrace_qc.thermo.locator import (
     get_thermo_helper_status,
     is_thermo_setup_error,
     locate_thermo_helper,
-    managed_thermo_helper_directory,
     query_helper_version,
     query_license_status,
     verify_helper_version,
 )
+from rawtrace_qc.thermo.paths import (
+    managed_thermo_helper_directory,
+    thermo_config_directory,
+)
 from rawtrace_qc.thermo.runner import (
     build_thermo_helper_command,
     run_thermo_helper,
-    thermo_config_directory,
 )
 from rawtrace_qc.thermo.runtime import find_host_runtime
 from rawtrace_qc.thermo.specification import (

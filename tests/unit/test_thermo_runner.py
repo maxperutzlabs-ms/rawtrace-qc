@@ -20,8 +20,6 @@ from rawtrace_qc.errors import (
     ThermoHelperTimeoutError,
 )
 from rawtrace_qc.thermo import (
-    THERMO_HELPER_NAME,
-    THERMO_HELPER_RELEASE,
     ThermoHelperState,
     build_thermo_helper_command,
     execute_helper_process,
@@ -247,15 +245,6 @@ class TestRunThermoHelper:
 
         with pytest.raises(ValueError, match="timeout must be greater than zero"):
             run_thermo_helper(["helper.exe"], timeout=0)
-
-
-class TestThermoConfigDirectory:
-    def test_returns_an_absolute_folder_below_the_data_directory(self, isolated_data_directory: Path) -> None:
-        config_directory = thermo_config_directory()
-
-        assert config_directory == (
-            isolated_data_directory.resolve() / "tools" / THERMO_HELPER_NAME / THERMO_HELPER_RELEASE.version / "config"
-        )
 
 
 class TestThermoHelperEnvironment:

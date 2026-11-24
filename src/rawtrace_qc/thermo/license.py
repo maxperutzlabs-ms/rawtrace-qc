@@ -11,7 +11,7 @@ from rawtrace_qc.errors import (
     ThermoHelperNotFoundError,
 )
 from rawtrace_qc.thermo import locator
-from rawtrace_qc.thermo.runner import thermo_config_directory
+from rawtrace_qc.thermo.paths import thermo_config_directory
 from rawtrace_qc.thermo.specification import (
     ThermoHelperSpecification,
     resolve_thermo_helper_specification,

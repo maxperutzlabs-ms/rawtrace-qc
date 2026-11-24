@@ -19,11 +19,7 @@ from rawtrace_qc.errors import (
     ThermoHelperOutputError,
     ThermoHelperTimeoutError,
 )
-from rawtrace_qc.thermo.specification import (
-    THERMO_HELPER_NAME,
-    THERMO_HELPER_RELEASE,
-    ThermoHelperSpecification,
-)
+from rawtrace_qc.thermo.paths import thermo_config_directory
 
 if TYPE_CHECKING:
     from rawtrace_qc.extractors.protocol import PrecisionMode
@@ -190,36 +186,6 @@ def run_thermo_helper(
         stdout=stdout,
         stderr=stderr,
     )
-
-
-def thermo_config_directory(
-    specification: ThermoHelperSpecification | None = None,
-) -> Path:
-    """Return the default folder in which the helper records the license acceptance.
-
-    The folder is `tools/<tool>/<version>/config` in the folder of
-    `default_data_directory()`, next to the install folders of the helper
-    version and not inside one, so that reinstalling the helper keeps the
-    acceptance. Each helper version has its own folder, so the license is
-    accepted again for every new helper version.
-    The folder is not created, because the helper creates it when needed.
-
-    Args:
-        specification: Release specification. If None (default), uses the
-            pinned release. A helper given by an explicit path also uses the
-            folder of the pinned release.
-
-    Returns:
-        The absolute path of the folder.
-    """
-    tool_name = THERMO_HELPER_NAME if specification is None else specification.tool_name
-    version = (
-        THERMO_HELPER_RELEASE.version
-        if specification is None
-        else specification.version
-    )
-    root = environment.default_data_directory().resolve()
-    return root / "tools" / tool_name / version / "config"
 
 
 def thermo_helper_environment(

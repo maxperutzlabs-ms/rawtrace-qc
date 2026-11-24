@@ -254,7 +254,7 @@ Rawtrace-qc finds the helper in one of two ways:
 - A caller can give an explicit path to the executable or to its folder. If this path does not lead to the executable, rawtrace-qc raises `ThermoHelperNotFoundError` and does not use the managed helper instead.
 - Without an explicit path, rawtrace-qc uses the managed helper in `<user_data_dir>/tools/thermoscanheaderextractor/<version>/<runtime>/`.
 
-`<user_data_dir>` is the application data folder of the user account, which `default_data_directory()` returns. It cannot be changed, so the library, the CLI and the desktop application always find the same managed helper and, unless `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR` is set, the same license folder.
+`<user_data_dir>` is the application data folder of the user account, which `default_data_directory()` returns. It cannot be changed, so the library, the CLI and the desktop application always find the same managed helper and, unless `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR` is set, the same license folder. `thermo/paths.py` builds all folders of the helper below it: `managed_thermo_helper_directory()` returns the install folder of a runtime, and `thermo_config_directory()` the license folder of a version. Both share the version folder `tools/thermoscanheaderextractor/<version>/`, and both paths are absolute.
 
 `get_thermo_helper_status()` has no side effects and returns one of these states: `READY`, `NOT_INSTALLED`, `UNLICENSED`, `INVALID_VERSION`, or `UNSUPPORTED_PLATFORM`. It reports an unusable explicit path as `NOT_INSTALLED`. In contrast, `locate_thermo_helper()` returns the executable or raises a specific `ThermoHelperError`.
 

@@ -27,11 +27,8 @@ from rawtrace_qc.extractors.common import (
 from rawtrace_qc.extractors.protocol import PrecisionMode
 from rawtrace_qc.models import ExtractionResult
 from rawtrace_qc.thermo.locator import locate_thermo_helper
-from rawtrace_qc.thermo.runner import (
-    build_thermo_helper_command,
-    run_thermo_helper,
-    thermo_config_directory,
-)
+from rawtrace_qc.thermo.paths import thermo_config_directory
+from rawtrace_qc.thermo.runner import build_thermo_helper_command, run_thermo_helper
 from rawtrace_qc.thermo.specification import ThermoHelperSpecification
 from rawtrace_qc.traces import load_trace
 

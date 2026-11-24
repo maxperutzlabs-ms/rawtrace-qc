@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
-from rawtrace_qc import environment
 from rawtrace_qc.errors import (
     ThermoHelperCommandError,
     ThermoHelperConfigError,
@@ -22,10 +21,13 @@ from rawtrace_qc.errors import (
     ThermoHelperVersionError,
     UnsupportedPlatformError,
 )
+from rawtrace_qc.thermo.paths import (
+    managed_thermo_helper_directory,
+    thermo_config_directory,
+)
 from rawtrace_qc.thermo.runner import (
     THERMO_CONFIG_DIRECTORY_VARIABLE,
     describe_helper_start_failure,
-    thermo_config_directory,
     thermo_helper_environment,
 )
 from rawtrace_qc.thermo.specification import (
@@ -367,34 +369,6 @@ def find_thermo_helper_path(
         return managed_path
 
     return None
-
-
-def managed_thermo_helper_directory(
-    specification: ThermoHelperSpecification | None = None,
-) -> Path:
-    """Return the managed install directory of a helper release for one runtime.
-
-    The directory is `tools/<tool>/<version>/<runtime>` in the folder of
-    `default_data_directory()` and is not created by this function.
-
-    Args:
-        specification: Release specification. If None (default), resolve the
-            specification for the current host runtime.
-
-    Returns:
-        The managed install directory path.
-
-    Raises:
-        UnsupportedPlatformError: If no specification is given and the current
-            runtime has no pinned helper release.
-    """
-    if specification is None:
-        specification = resolve_thermo_helper_specification()
-    return environment.helper_tool_directory(
-        specification.tool_name,
-        specification.version,
-        specification.runtime,
-    )
 
 
 def verify_helper_version(

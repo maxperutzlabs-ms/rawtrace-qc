@@ -31,19 +31,3 @@ def default_data_directory() -> Path:
         The application data directory path.
     """
     return Path(user_data_dir(appname=_APP_NAME, appauthor=_APP_AUTHOR, roaming=False))
-
-
-def helper_tool_directory(helper_name: str, release_version: str, runtime: str) -> Path:
-    """Return a helper install path isolated by helper name, release, and runtime.
-
-    The path is below `default_data_directory()`.
-
-    Args:
-        helper_name: Helper tool directory name.
-        release_version: Required helper release version.
-        runtime: Runtime identifier such as `win-x64`.
-
-    Returns:
-        The version- and runtime-specific helper directory path.
-    """
-    return default_data_directory() / "tools" / helper_name / release_version / runtime

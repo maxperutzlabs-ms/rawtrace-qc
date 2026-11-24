@@ -26,7 +26,7 @@ from rawtrace_qc.errors import (
     ThermoHelperInstallationError,
     ThermoHelperInstallConflictError,
 )
-from rawtrace_qc.thermo.locator import managed_thermo_helper_directory
+from rawtrace_qc.thermo.paths import managed_thermo_helper_directory
 from rawtrace_qc.thermo.specification import (
     ArchiveFormat,
     ThermoHelperSpecification,
@@ -88,9 +88,8 @@ def install_thermo_helper(
     if specification is None:
         specification = resolve_thermo_helper_specification()
 
-    runtime_directory = managed_thermo_helper_directory(specification)
-    install_parent = runtime_directory.parent.resolve()
-    install_directory = install_parent / runtime_directory.name
+    install_directory = managed_thermo_helper_directory(specification)
+    install_parent = install_directory.parent
 
     if (
         archive_path is None
