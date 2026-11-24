@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 
@@ -214,6 +215,7 @@ def validate_trace(
                 f"Required column {column!r} contains null values."
             )
 
+    _validate_rows(table)
     _validate_metadata(metadata)
     _validate_levels(table, metadata)
     _validate_faims(table)
@@ -228,6 +230,35 @@ def _validate_column_type(table: pa.Table, definition: ColumnDefinition) -> None
     if not valid:
         raise ArtifactValidationError(
             f"Column {definition.name!r} has an invalid Arrow type: {data_type}."
+        )
+
+
+def _validate_rows(table: pa.Table) -> None:
+    if table.num_rows == 0:
+        raise ArtifactValidationError("The trace file contains no scans.")
+
+    scan_ids = table.column("scan_id").to_numpy()
+    retention_times = table.column("retention_time_sec").to_numpy()
+
+    sorted_ids = np.sort(scan_ids)
+    repeated = sorted_ids[1:][sorted_ids[1:] == sorted_ids[:-1]]
+    if repeated.size:
+        raise ArtifactValidationError(
+            f"scan_id {repeated[0]} occurs more than once; scan_id must be unique."
+        )
+
+    out_of_order = np.flatnonzero(
+        (retention_times[1:] < retention_times[:-1])
+        | (
+            (retention_times[1:] == retention_times[:-1])
+            & (scan_ids[1:] < scan_ids[:-1])
+        )
+    )
+    if out_of_order.size:
+        row = int(out_of_order[0]) + 1
+        raise ArtifactValidationError(
+            f"Row {row + 1} (scan_id {scan_ids[row]}) is out of order; rows must be "
+            "sorted by retention_time_sec, then by scan_id."
         )
 
 

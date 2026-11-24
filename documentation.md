@@ -214,6 +214,7 @@ Parquet metadata has required and optional fields:
 Other rules apply as well:
 
 - Files must use Snappy compression.
+- A trace has at least one row, `scan_id` is unique, and rows are sorted by `retention_time_sec`, then by `scan_id`. Both strict modes check this.
 - An `ms1` file contains only level 1, and an `msn` file contains only levels 2 and higher.
 - `strict=True` rejects reserved and unknown columns. `strict=False` checks the type of known columns and ignores unknown columns.
 - `source_filename` is the original raw-file name and does not depend on the output name.

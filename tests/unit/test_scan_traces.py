@@ -14,7 +14,7 @@ def _table() -> pa.Table:
     return pa.table(
         {
             "scan_id": pa.array([1, 2], type=pa.int32()),
-            "retention_time_sec": pa.array([1.0, 2.0], type=pa.float32()),
+            "retention_time_sec": pa.array([1.0, 1.0], type=pa.float32()),
             "ms_level": pa.array([1, 1], type=pa.int8()),
             "total_ion_current": pa.array([10.0, 20.0], type=pa.float32()),
         }
@@ -102,6 +102,30 @@ class TestScanTraceValidation:
         metadata = {key.decode(): value.decode() for key, value in _metadata().items()}
 
         validate_trace(_table(), metadata)
+
+    @pytest.mark.parametrize(
+        ("scan_ids", "retention_times", "message"),
+        [
+            ([], [], "no scans"),
+            ([3, 1, 2, 1], [1.0, 2.0, 3.0, 4.0], "scan_id 1 occurs more than once"),
+            ([1, 2, 3], [1.0, 3.0, 2.0], "Row 3 .* out of order"),
+            ([2, 1], [1.0, 1.0], "out of order"),
+        ],
+    )
+    def test_validator_rejects_invalid_rows(
+        self, scan_ids: list[int], retention_times: list[float], message: str
+    ) -> None:
+        table = pa.table(
+            {
+                "scan_id": pa.array(scan_ids, type=pa.int32()),
+                "retention_time_sec": pa.array(retention_times, type=pa.float32()),
+                "ms_level": pa.array([1] * len(scan_ids), type=pa.int8()),
+            }
+        )
+        metadata = {key.decode(): value.decode() for key, value in _metadata().items()}
+
+        with pytest.raises(ArtifactValidationError, match=message):
+            validate_trace(table, metadata)
 
     def test_load_accepts_faims_column_with_some_null_values(self, tmp_path: Path) -> None:
         table = _table().append_column("faims_cv", pa.array([-50.0, None], type=pa.float32()))
