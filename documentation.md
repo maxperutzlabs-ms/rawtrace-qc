@@ -197,7 +197,7 @@ All extractors share this behavior:
 
 ## Trace artifacts
 
-`traces/schema.py` is the source of truth for the schema-v1 contract. `load_trace()`, `write_trace()`, and `validate_trace()` enforce it.
+The specification in `docs/scan-trace-spec.md` is the source of truth for the schema-v1 contract. `traces/schema.py` with `validate_trace()` is its reference implementation, and `load_trace()` and `write_trace()` call `validate_trace()`.
 
 | Column | Status |
 |---|---|

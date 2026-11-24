@@ -1,6 +1,6 @@
 ---
 title: Scan-Trace Parquet Specification
-document_version: "1.2"
+document_version: "1.3"
 schema_version: "1"
 reference_validator: rawtrace_qc.traces.validate_trace
 ---
@@ -8,7 +8,7 @@ reference_validator: rawtrace_qc.traces.validate_trace
 # Scan-Trace Parquet Specification
 
 ## 1. Purpose and scope
-Defines a vendor-neutral Parquet standard for raw-file extractors (Bruker Python reader; Thermo `ThermoScanHeaderExtractor`), independent of any tool's internal naming. Any extractor emitting conforming files is a valid producer; any consumer relying only on the guarantees here is valid. The primary consumer is a TIC/base-peak viewer.
+Defines a vendor-neutral Parquet standard for raw-file extractors (Bruker: `BrukerExtractor` in rawtrace-qc; Thermo: `ThermoScanHeaderExtractor`), independent of any tool's internal naming. Any extractor emitting conforming files is a valid producer; any consumer relying only on the guarantees here is valid. The primary consumer is a TIC/base-peak viewer.
 
 The contract does not fix exact numeric bit widths except where §5/§8 state otherwise. It fixes: file naming, column names, logical types, units, required vs. optional columns, row ordering, null semantics, and vendor caveats affecting a value's *meaning*.
 
@@ -72,8 +72,8 @@ A column may be **entirely omitted** if not attempted. Column present = "attempt
 
 | name | logical type | unit | notes |
 |---|---|---|---|
-| `total_ion_current` | float | intensity | Genuine per-spectrum TIC for both vendors. Bruker MSn caveat: §7. |
-| `base_peak_intensity` | float | intensity | Genuine per-frame value for both vendors: Thermo reads it from the native scan trailer; Bruker reads `Frames.MaxIntensity`. Same aggregation caveats as `total_ion_current` (§7), no additional derivation caveats beyond those. |
+| `total_ion_current` | float | intensity | Native value: one per spectrum for Thermo, read from the scan header (scan statistics); one per frame for Bruker, read from `Frames.SummedIntensities`. Bruker MSn caveat: §7. |
+| `base_peak_intensity` | float | intensity | Native value: one per spectrum for Thermo, read from the scan header (scan statistics); one per frame for Bruker, read from `Frames.MaxIntensity`. Same caveats as `total_ion_current` (§7). |
 | `faims_cv` | float | volts | Thermo-only. Omitted (not all-null) when FAIMS unused. Bruker must not populate this (§7). Always 32-bit (§8). |
 | `injection_time_ms` | float | milliseconds | Thermo: trailer-extra value (verify label per firmware). Bruker: `Frames.AccumulationTime`. Always 32-bit (§8). |
 
@@ -83,7 +83,7 @@ Pre-standardized names/types so implementations don't diverge later. All m/z col
 | name | logical type | unit | file | notes |
 |---|---|---|---|---|
 | `base_peak_mz` | float (64-bit always) | m/z | ms1, msn | Full precision even in `low` mode, see §8. |
-| `polarity` | integer (`+1`/`-1`; `null`=unknown) | - | ms1, msn | |
+| `polarity` | integer (`+1`/`-1`) | - | ms1, msn | |
 | `precursor_mz` | float (64-bit always) | m/z | msn | Bruker: needs `analysis.tdf_bin` decoder (§7). |
 | `isolation_window_lower_mz` / `_upper_mz` | float (64-bit always) | m/z | msn | Same Bruker caveat. |
 
@@ -102,11 +102,12 @@ These columns are not planned and their names are not reserved. Adding any of th
 - Never hard-code numeric bit widths; read through Arrow/pandas.
 - You may rely on RT ordering and `scan_id` uniqueness (§5).
 - Before presenting Bruker MSn intensities, check `row_granularity` (§7).
+- Accept any non-empty `vendor` value, not only the known ones (§9).
 
 ## 7. Vendor / row-granularity semantics
 **Terminology note:** Bruker's own database schema uses "Scan" to mean one ion-mobility (TIMS) sub-measurement inside a Frame (`Frames.NumScans`, typically several hundred per frame). This is unrelated to this document's `scan_id` column, which for Bruker rows always equals `Frames.Id`, i.e. it identifies a Frame, not one of these internal TIMS scans. Don't conflate the two "scan" usages.
 
-**Thermo (all levels):** `scan_id` = native scan number, globally continuous. One row = one spectrum; TIC and base peak are genuine per-spectrum values, read directly from the native scan trailer, no aggregation of any kind.
+**Thermo (all levels):** `scan_id` = native scan number, globally continuous. One row = one spectrum; TIC and base peak are genuine per-spectrum values, read directly from the scan header (scan statistics), no aggregation of any kind.
 
 **Bruker MS1:** `scan_id` = `Frames.Id`; one frame = one conventional (ion-mobility-collapsed) MS1 spectrum. Both `total_ion_current` (`Frames.SummedIntensities`) and `base_peak_intensity` (`Frames.MaxIntensity`) are native per-frame values, computed by Bruker's own acquisition software as the sum/max across that frame's internal TIMS mobility scans. This collapse is expected and benign: it's the same operation any non-IMS instrument performs implicitly to produce one full-range scan per RT point, and it does not mix together separate logical spectra. `row_granularity="spectrum"`.
 
@@ -133,7 +134,7 @@ Fixed-width regardless of mode: `faims_cv`, `injection_time_ms` are **always 32-
 | key | example | purpose |
 |---|---|---|
 | `schema_version` | `"1"` | Spec version. |
-| `vendor` | `"thermo"`/`"bruker"` | Instrument family. |
+| `vendor` | `"thermo"`/`"bruker"` | Instrument family. Must not be empty. Producers should write a lowercase identifier. Known values are `"thermo"` and `"bruker"`; other vendors may use their own value. |
 | `ms_level_file` | `"ms1"`/`"msn"` | Which sibling this is (blind open). |
 | `precision_mode` | `"low"`/`"high"` | §8. |
 | `row_granularity` | `"spectrum"`/`"frame-aggregate"` | §7. Always `"spectrum"` in MS1 file. |
