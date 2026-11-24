@@ -4,11 +4,14 @@
 
 ### Added
 - The scan-trace specification in `docs/scan-trace-spec.md`.
+- `traces` describes the full contract: `ColumnDefinition` has a unit, the files that may contain the column, and a fixed bit width (`ColumnBitWidth`), and `TRACE_METADATA` describes each metadata field with `MetadataDefinition`.
 
 ### Changed
 - The trace schema no longer reserves the columns `charge_state`, `collision_energy`, and `activation_type`. They are out of scope for now.
 - Trace files may contain the optional `injection_time_ms` column, as the specification allows. Strict loading no longer rejects it as reserved.
 - Loading and writing a trace now rejects files without rows, with a repeated `scan_id`, or with rows that are not sorted by retention time and then by `scan_id`, as the specification requires.
+- Loading and writing a trace now rejects float columns whose bit width the specification does not allow, for example a 64-bit `total_ion_current` in precision mode `low`.
+- Error messages about a column with the wrong type now say which kind of numbers the column must contain.
 
 ### Removed
 - **Breaking:** `ColumnLogicalType.TEXT`. It was only used by `activation_type`, which is no longer reserved, so no schema-v1 column has a text type.

@@ -19,6 +19,8 @@ from rawtrace_qc.traces.schema import (
     REQUIRED_METADATA,
     SCHEMA_VERSION,
     TRACE_COLUMN_BY_NAME,
+    TRACE_METADATA,
+    ColumnBitWidth,
     ColumnDefinition,
     ColumnLogicalType,
     ColumnSupport,
@@ -96,6 +98,9 @@ def write_trace(
         source_filename: Original source filename, including its extension.
         ms_level_file: File level identifier, either `ms1` or `msn`.
         precision_mode: Trace precision identifier, either `low` or `high`.
+            `retention_time_sec`, `total_ion_current` and
+            `base_peak_intensity` must be float32 in `low` and float64 in
+            `high`.
         row_granularity: Row meaning, either `spectrum` or `frame-aggregate`.
         extracted_at: Optional ISO-8601 UTC extraction timestamp.
         acquisition_start_time: Optional ISO-8601 UTC source acquisition start
@@ -217,6 +222,7 @@ def validate_trace(
 
     _validate_rows(table)
     _validate_metadata(metadata)
+    _validate_widths(table, metadata)
     _validate_levels(table, metadata)
     _validate_faims(table)
 
@@ -225,12 +231,35 @@ def _validate_column_type(table: pa.Table, definition: ColumnDefinition) -> None
     data_type = table.schema.field(definition.name).type
     if definition.logical_type is ColumnLogicalType.INTEGER:
         valid = pa.types.is_integer(data_type)
+        expected = "whole numbers"
     else:
         valid = pa.types.is_floating(data_type)
+        expected = "decimal numbers"
     if not valid:
         raise ArtifactValidationError(
-            f"Column {definition.name!r} has an invalid Arrow type: {data_type}."
+            f"Column {definition.name!r} must contain {expected}, but contains "
+            f"{data_type} values."
         )
+
+
+def _validate_widths(table: pa.Table, metadata: Mapping[str, str | None]) -> None:
+    for column in table.column_names:
+        definition = TRACE_COLUMN_BY_NAME.get(column)
+        if definition is None or definition.width is None:
+            continue
+        if definition.width is ColumnBitWidth.PRECISION_MODE:
+            precision_mode = metadata["precision_mode"]
+            expected_width = 32 if precision_mode == "low" else 64
+            context = f" in precision_mode {precision_mode!r}"
+        else:
+            expected_width = 32 if definition.width is ColumnBitWidth.FLOAT32 else 64
+            context = ""
+        actual_width = table.schema.field(column).type.bit_width
+        if actual_width != expected_width:
+            raise ArtifactValidationError(
+                f"Column {column!r} must contain {expected_width}-bit numbers"
+                f"{context}, but contains {actual_width}-bit numbers."
+            )
 
 
 def _validate_rows(table: pa.Table) -> None:
@@ -300,19 +329,15 @@ def _validate_metadata(metadata: Mapping[str, str | None]) -> None:
             f"Unsupported scan-trace schema version {schema_version!r}; "
             f"expected {SCHEMA_VERSION!r}."
         )
-    ms_level_file = metadata["ms_level_file"]
-    if ms_level_file not in {"ms1", "msn"}:
-        raise ArtifactValidationError("Metadata ms_level_file must be 'ms1' or 'msn'.")
-    precision_mode = metadata["precision_mode"]
-    if precision_mode not in {"low", "high"}:
-        raise ArtifactValidationError(
-            "Metadata precision_mode must be 'low' or 'high'."
-        )
-    row_granularity = metadata["row_granularity"]
-    if row_granularity not in {"spectrum", "frame-aggregate"}:
-        raise ArtifactValidationError(
-            "Metadata row_granularity must be 'spectrum' or 'frame-aggregate'."
-        )
+    for definition in TRACE_METADATA:
+        allowed_values = definition.allowed_values
+        if allowed_values is not None and metadata[definition.field] not in (
+            allowed_values
+        ):
+            raise ArtifactValidationError(
+                f"Metadata {definition.field} must be "
+                f"{' or '.join(repr(value) for value in allowed_values)}."
+            )
     vendor = metadata["vendor"]
     source_filename = metadata["source_filename"]
     if (

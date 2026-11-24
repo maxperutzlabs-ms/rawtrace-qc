@@ -16,7 +16,7 @@ def test_written_trace_can_be_loaded_and_processed(tmp_path: Path) -> None:
                 "retention_time_sec": pa.array([60.0]),
                 "ms_level": pa.array([1], type=pa.int8()),
                 "total_ion_current": pa.array([10.0]),
-                "faims_cv": pa.array([-50.0]),
+                "faims_cv": pa.array([-50.0], type=pa.float32()),
             }
         ),
         tmp_path / "integration-sample.d.ms1-trace.parquet",
@@ -37,7 +37,7 @@ def test_written_trace_can_be_loaded_and_processed(tmp_path: Path) -> None:
                 "retention_time_sec": pa.array([120.0, 180.0]),
                 "ms_level": pa.array([2, 3], type=pa.int8()),
                 "total_ion_current": pa.array([20.0, 30.0]),
-                "faims_cv": pa.array([-50.0, -60.0]),
+                "faims_cv": pa.array([-50.0, -60.0], type=pa.float32()),
             }
         ),
         tmp_path / "integration-sample.d.msn-trace.parquet",

@@ -153,13 +153,43 @@ class TestScanTraceValidation:
 
         assert artifact.table["injection_time_ms"].to_pylist() == [5.0, None]
 
+    @pytest.mark.parametrize(
+        ("column", "data_type", "precision_mode"),
+        [
+            ("total_ion_current", pa.float64(), "low"),
+            ("total_ion_current", pa.float32(), "high"),
+            ("faims_cv", pa.float64(), "high"),
+            ("base_peak_mz", pa.float32(), "low"),
+        ],
+    )
+    def test_validator_rejects_column_width_that_the_contract_does_not_allow(
+        self, column: str, data_type: pa.DataType, precision_mode: str
+    ) -> None:
+        table = _table().drop(["total_ion_current"])
+        if precision_mode == "high":
+            table = table.set_column(1, "retention_time_sec", table["retention_time_sec"].cast(pa.float64()))
+        table = table.append_column(column, pa.array([1.0, 2.0], type=data_type))
+        metadata = {key.decode(): value.decode() for key, value in _metadata().items()}
+        metadata["precision_mode"] = precision_mode
+
+        with pytest.raises(ArtifactValidationError, match=f"{column}.*bit"):
+            validate_trace(table, metadata, strict=False)
+
+    @pytest.mark.parametrize("field", ["ms_level_file", "precision_mode", "row_granularity"])
+    def test_validator_rejects_metadata_value_that_is_not_allowed(self, field: str) -> None:
+        metadata = {key.decode(): value.decode() for key, value in _metadata().items()}
+        metadata[field] = "other"
+
+        with pytest.raises(ArtifactValidationError, match=field):
+            validate_trace(_table(), metadata)
+
     @pytest.mark.parametrize("column", ["faims_cv", "injection_time_ms"])
     def test_load_rejects_non_numeric_optional_float_column(self, tmp_path: Path, column: str) -> None:
         table = _table().append_column(column, pa.array(["A", "B"]))
         path = tmp_path / "invalid-column.parquet"
         pq.write_table(table.replace_schema_metadata(_metadata()), path, compression="snappy")
 
-        with pytest.raises(ArtifactValidationError, match=f"{column}.*invalid Arrow type"):
+        with pytest.raises(ArtifactValidationError, match=f"{column}.*decimal numbers"):
             load_trace(path)
 
     def test_load_rejects_missing_required_column(self, tmp_path: Path) -> None:

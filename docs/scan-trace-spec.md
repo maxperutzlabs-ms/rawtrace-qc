@@ -52,7 +52,7 @@ reserved but not implemented:
 - `isolation_window_upper_mz`
 
 ## 5. Column contract
-Logical types are fixed; bit width is an implementation detail governed by `precision_mode` (§8, recorded in metadata §9) **except** where a fixed width is stated in §5.2/§5.3/§8. Read through Arrow/pandas; never hard-code a byte width.
+Logical types are fixed. Float bit widths are set by §8: producers MUST write the columns that `precision_mode` governs with the width of the mode recorded in metadata (§9), and the fixed-width columns with their fixed width. Validators MAY reject other widths. Readers should still read through Arrow/pandas and not depend on a byte width.
 
 **Row ordering:** rows MUST be ordered by non-decreasing `retention_time_sec`; ties broken by ascending `scan_id`.
 
@@ -70,22 +70,23 @@ Logical types are fixed; bit width is an implementation detail governed by `prec
 ### 5.2 Standard optional columns
 A column may be **entirely omitted** if not attempted. Column present = "attempted for this run"; null cell = "extraction failed for this row." Never conflate; never substitute `0`.
 
-| name | logical type | unit | notes |
-|---|---|---|---|
-| `total_ion_current` | float | intensity | Native value: one per spectrum for Thermo, read from the scan header (scan statistics); one per frame for Bruker, read from `Frames.SummedIntensities`. Bruker MSn caveat: §7. |
-| `base_peak_intensity` | float | intensity | Native value: one per spectrum for Thermo, read from the scan header (scan statistics); one per frame for Bruker, read from `Frames.MaxIntensity`. Same caveats as `total_ion_current` (§7). |
-| `faims_cv` | float | volts | Thermo-only. Producers omit the column when FAIMS is not used. A column where every row is null means that reading the CV was attempted and failed in every row. Bruker must not populate this (§7). Always 32-bit (§8). |
-| `injection_time_ms` | float | milliseconds | Thermo: ion injection time of the scan, from the scan trailer. Bruker: ion accumulation time of the frame (`Frames.AccumulationTime`). Always 32-bit (§8). |
+| name | logical type | unit | files | notes |
+|---|---|---|---|---|
+| `total_ion_current` | float | intensity | ms1, msn | Native value: one per spectrum for Thermo, read from the scan header (scan statistics); one per frame for Bruker, read from `Frames.SummedIntensities`. Bruker MSn caveat: §7. |
+| `base_peak_intensity` | float | intensity | ms1, msn | Native value: one per spectrum for Thermo, read from the scan header (scan statistics); one per frame for Bruker, read from `Frames.MaxIntensity`. Same caveats as `total_ion_current` (§7). |
+| `faims_cv` | float | volts | ms1, msn | Thermo-only. Producers omit the column when FAIMS is not used. A column where every row is null means that reading the CV was attempted and failed in every row. Bruker must not populate this (§7). Always 32-bit (§8). |
+| `injection_time_ms` | float | milliseconds | ms1, msn | Thermo: ion injection time of the scan, from the scan trailer. Bruker: ion accumulation time of the frame (`Frames.AccumulationTime`). Always 32-bit (§8). |
 
 ### 5.3 Reserved columns (not implemented in v1)
 Pre-standardized names/types so implementations don't diverge later. All m/z columns are **always 64-bit** (see §8).
 
-| name | logical type | unit | file | notes |
+| name | logical type | unit | files | notes |
 |---|---|---|---|---|
 | `base_peak_mz` | float (64-bit always) | m/z | ms1, msn | Full precision even in `low` mode, see §8. |
 | `polarity` | integer (`+1`/`-1`) | - | ms1, msn | |
 | `precursor_mz` | float (64-bit always) | m/z | msn | Bruker: needs `analysis.tdf_bin` decoder (§7). |
-| `isolation_window_lower_mz` / `_upper_mz` | float (64-bit always) | m/z | msn | Same Bruker caveat. |
+| `isolation_window_lower_mz` | float (64-bit always) | m/z | msn | Same Bruker caveat. |
+| `isolation_window_upper_mz` | float (64-bit always) | m/z | msn | Same Bruker caveat. |
 
 ### 5.4 Currently out of scope
 These columns are not planned and their names are not reserved. Adding any of them requires a new schema version, and these open questions must be settled first:
@@ -99,7 +100,7 @@ These columns are not planned and their names are not reserved. Adding any of th
 ## 6. Consumer contract
 - Check column presence before reading any optional/reserved column.
 - A null in a present column = extraction failed for that row; never `0`, never "unsupported."
-- Never hard-code numeric bit widths; read through Arrow/pandas.
+- Read through Arrow/pandas and don't depend on numeric bit widths; a validator may still check them against §8.
 - You may rely on RT ordering and `scan_id` uniqueness (§5).
 - Before presenting Bruker MSn intensities, check `row_granularity` (§7).
 - Accept any non-empty `vendor` value, not only the known ones (§9).
@@ -124,7 +125,7 @@ Consumers needing per-spectrum MS2 for Bruker must treat `"frame-aggregate"` as 
 - **`low`** (default): 32-bit floats. Adequate for chromatogram plotting; `retention_time_sec` is accurate to a few ms even for multi-hour runs, which is sufficient for display.
 - **`high`**: 64-bit floats.
 
-Fixed-width regardless of mode: `faims_cv`, `injection_time_ms` are **always 32-bit**; all m/z columns (`base_peak_mz`, `precursor_mz`, `isolation_window_lower_mz`, `isolation_window_upper_mz`) are **always 64-bit**. Consumers still must not hard-code widths beyond these fixed cases.
+Fixed-width regardless of mode: `faims_cv`, `injection_time_ms` are **always 32-bit**; all m/z columns (`base_peak_mz`, `precursor_mz`, `isolation_window_lower_mz`, `isolation_window_upper_mz`) are **always 64-bit**. Producers MUST write the widths of this section. Integer columns have no fixed width.
 
 ## 9. File-level metadata (Parquet key-value footer)
 **Required:** `schema_version`, `vendor`, `ms_level_file`, `precision_mode`, `row_granularity`, `source_filename`.

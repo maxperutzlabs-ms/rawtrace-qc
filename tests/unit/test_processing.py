@@ -23,7 +23,7 @@ def _metadata(*, row_granularity: str = "spectrum", ms_level_file: str = "msn") 
         "source_filename": "sample.d",
         "source_id": "78d629b2-0edc-4f60-b942-979a46b94ac8",
         "ms_level_file": ms_level_file,
-        "precision_mode": "low",
+        "precision_mode": "high",
         "row_granularity": row_granularity,
         "extracted_at": "2026-08-05T12:00:00Z",
         "acquisition_start_time": "2026-08-05T10:00:00Z",
@@ -82,7 +82,7 @@ class TestProcessTraces:
         assert processed[0].metadata.vendor == "bruker"
         assert processed[0].metadata.row_granularity == "spectrum"
         assert processed[0].metadata.time_unit == "min"
-        assert processed[0].metadata.precision == "low"
+        assert processed[0].metadata.precision == "high"
         assert processed[0].metadata.channels == ("total_ion_current", "base_peak_intensity")
         assert processed[0].table.column_names == ["retention_time_min", "total_ion_current", "base_peak_intensity"]
         assert processed[0].table["retention_time_min"].to_pylist() == [0.5, 1.5]
@@ -119,7 +119,7 @@ class TestProcessTraces:
         assert processed[0].metadata.source_id == "78d629b2-0edc-4f60-b942-979a46b94ac8"
 
     def test_split_faims_creates_one_table_per_cv(self) -> None:
-        table = _artifact().table.append_column("faims_cv", pa.array([-50.0, -50.0, -60.0, -60.0]))
+        table = _artifact().table.append_column("faims_cv", pa.array([-50.0, -50.0, -60.0, -60.0], type=pa.float32()))
 
         processed = process_traces([_artifact(table=table)])
 
@@ -127,7 +127,7 @@ class TestProcessTraces:
         assert all("faims_cv" not in item.table.column_names for item in processed)
 
     def test_combined_faims_is_not_implemented(self) -> None:
-        table = _artifact().table.append_column("faims_cv", pa.array([-50.0, -50.0, -60.0, -60.0]))
+        table = _artifact().table.append_column("faims_cv", pa.array([-50.0, -50.0, -60.0, -60.0], type=pa.float32()))
 
         with pytest.raises(NotImplementedError, match="combined processing"):
             process_traces([_artifact(table=table)], options=ProcessingOptions(faims_mode=FaimsProcessingMode.COMBINED))
@@ -144,7 +144,7 @@ class TestProcessTraces:
                 "scan_id": pa.array([1, 2, 3, 4, 5], type=pa.int32()),
                 "retention_time_sec": pa.array([30.0, 60.0, 90.0, 120.0, 150.0]),
                 "ms_level": pa.array([2, 2, 2, 2, 2], type=pa.int8()),
-                "faims_cv": pa.array([-50.0, -50.0, -50.0, -50.0, -60.0]),
+                "faims_cv": pa.array([-50.0, -50.0, -50.0, -50.0, -60.0], type=pa.float32()),
             }
         )
 
@@ -153,7 +153,7 @@ class TestProcessTraces:
         assert [(item.metadata.ms_level, item.metadata.faims_cv) for item in processed] == [(2, -50.0)]
 
     def test_mixed_null_and_numeric_faims_values_are_rejected(self) -> None:
-        table = _artifact().table.append_column("faims_cv", pa.array([None, -50.0, -60.0, -60.0]))
+        table = _artifact().table.append_column("faims_cv", pa.array([None, -50.0, -60.0, -60.0], type=pa.float32()))
 
         with pytest.raises(ProcessingError, match="FAIMS CV is missing"):
             process_traces([_artifact(table=table)])

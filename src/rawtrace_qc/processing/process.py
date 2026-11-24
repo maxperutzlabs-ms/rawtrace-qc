@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from collections.abc import Sequence
 from dataclasses import replace
 from typing import cast
@@ -143,22 +142,12 @@ def _partition_faims(
         )
 
     values = table["faims_cv"].combine_chunks().to_pylist()
-    non_null_values = [value for value in values if value is not None]
-    if not non_null_values:
-        return ((None, table),)
-    if len(non_null_values) != len(values):
+    if None in values:
         raise ProcessingError(
             "FAIMS CV is missing for some scans, so they cannot be assigned to a CV."
         )
-    if any(not isinstance(value, (int, float)) for value in non_null_values):
-        raise ProcessingError(
-            "Trace artifact faims_cv values must be numeric or null; mixed "
-            "FAIMS value types are not supported."
-        )
-    if any(not math.isfinite(float(value)) for value in non_null_values):
-        raise ProcessingError("Trace artifact faims_cv values must be finite numbers.")
     field_type = table.schema.field("faims_cv").type
-    unique_values = sorted({float(value) for value in non_null_values})
+    unique_values = sorted(set(values))
     partitions = []
     for faims_cv in unique_values:
         partition = table.filter(

@@ -199,6 +199,8 @@ All extractors share this behavior:
 
 The specification in `docs/scan-trace-spec.md` is the source of truth for the schema-v1 contract. `traces/schema.py` with `validate_trace()` is its reference implementation, and `load_trace()` and `write_trace()` call `validate_trace()`.
 
+`traces/schema.py` describes the contract as data. `TRACE_COLUMNS` has a `ColumnDefinition` for each column: logical type, required or optional, implemented or reserved, unit, the files that may contain it, and the bit width that the spec fixes. `TRACE_METADATA` has a `MetadataDefinition` for each metadata field: required or recommended, and the allowed values. `validate_trace()` reads its checks from this model; it does not check the `files` of a column. `tests/unit/test_scan_trace_spec.py` parses the tables in the spec and fails when they and `schema.py` disagree.
+
 | Column | Status |
 |---|---|
 | `scan_id`, `retention_time_sec`, `ms_level` | Required, no nulls |
@@ -214,6 +216,7 @@ Parquet metadata has required and optional fields:
 Other rules apply as well:
 
 - Files must use Snappy compression.
+- Float columns have the bit width that the spec fixes: `retention_time_sec`, `total_ion_current`, and `base_peak_intensity` are 32-bit in precision mode `low` and 64-bit in `high`, `faims_cv` and `injection_time_ms` are always 32-bit, and the reserved m/z columns are always 64-bit. Both strict modes check this.
 - A trace has at least one row, `scan_id` is unique, and rows are sorted by `retention_time_sec`, then by `scan_id`. Both strict modes check this.
 - An `ms1` file contains only level 1, and an `msn` file contains only levels 2 and higher.
 - `strict=True` rejects reserved and unknown columns. `strict=False` checks the type of known columns and ignores unknown columns.
@@ -314,7 +317,7 @@ An entry appears only after the extraction has finished, because `TraceCache` fi
 
 ### Add a channel
 
-1. Add the column as implemented in `traces/schema.py`, and let the extractors write it.
+1. Add the column as implemented in `traces/schema.py` and in the spec, and let the extractors write it.
 2. Add it to `_REPORT_CHANNELS` in `processing/process.py`.
 3. Add a display definition to `CHANNEL_SPECS` in `report/channels.py`.
 
