@@ -203,7 +203,7 @@ The specification in `docs/scan-trace-spec.md` is the source of truth for the sc
 |---|---|
 | `scan_id`, `retention_time_sec`, `ms_level` | Required, no nulls |
 | `total_ion_current`, `base_peak_intensity`, `injection_time_ms` | Optional, a null means a failed row |
-| `faims_cv` | Optional, either all null or all finite numbers |
+| `faims_cv` | Optional, a null means a failed row, other values must be finite |
 | `base_peak_mz`, `polarity`, `precursor_mz`, `isolation_window_lower_mz`, `isolation_window_upper_mz` | Reserved, not implemented |
 
 Parquet metadata has required and optional fields:
@@ -222,7 +222,7 @@ Other rules apply as well:
 
 `process_traces()` turns artifacts into one `ProcessedTable` for each MS level and FAIMS CV. It sorts rows by retention time, converts the time to minutes, and moves the MS level, the CV, and the provenance into `ProcessedTableMetadata`. It reads only the channels in `_REPORT_CHANNELS` in `process.py`.
 
-The default options select MS levels 1 and 2, so MS3 rows and higher do not reach the report. `FaimsProcessingMode.SPLIT` is the only implemented mode, and `COMBINED` raises `NotImplementedError` for tables with FAIMS values. `minimum_faims_percentage` removes CVs with too few rows.
+The default options select MS levels 1 and 2, so MS3 rows and higher do not reach the report. `FaimsProcessingMode.SPLIT` is the only implemented mode, and `COMBINED` raises `NotImplementedError` for tables with FAIMS values. `minimum_faims_percentage` removes CVs with too few rows. A selected MS level with FAIMS CVs missing for some scans raises `ProcessingError`, because those scans cannot be assigned to a CV.
 
 ## Reports
 

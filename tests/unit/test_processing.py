@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pyarrow as pa
 import pytest
-from rawtrace_qc.errors import ArtifactValidationError, ConfigurationError, ProcessingError
+from rawtrace_qc.errors import ConfigurationError, ProcessingError
 from rawtrace_qc.processing import (
     FaimsProcessingMode,
     ProcessedTable,
@@ -153,9 +153,9 @@ class TestProcessTraces:
         assert [(item.metadata.ms_level, item.metadata.faims_cv) for item in processed] == [(2, -50.0)]
 
     def test_mixed_null_and_numeric_faims_values_are_rejected(self) -> None:
-        table = _artifact().table.append_column("faims_cv", pa.array([-50.0, None, -60.0, -60.0]))
+        table = _artifact().table.append_column("faims_cv", pa.array([None, -50.0, -60.0, -60.0]))
 
-        with pytest.raises(ArtifactValidationError, match="entirely null"):
+        with pytest.raises(ProcessingError, match="FAIMS CV is missing"):
             process_traces([_artifact(table=table)])
 
     def test_missing_channels_are_not_filled_with_sentinel_values(self) -> None:

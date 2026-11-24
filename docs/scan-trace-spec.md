@@ -74,7 +74,7 @@ A column may be **entirely omitted** if not attempted. Column present = "attempt
 |---|---|---|---|
 | `total_ion_current` | float | intensity | Native value: one per spectrum for Thermo, read from the scan header (scan statistics); one per frame for Bruker, read from `Frames.SummedIntensities`. Bruker MSn caveat: §7. |
 | `base_peak_intensity` | float | intensity | Native value: one per spectrum for Thermo, read from the scan header (scan statistics); one per frame for Bruker, read from `Frames.MaxIntensity`. Same caveats as `total_ion_current` (§7). |
-| `faims_cv` | float | volts | Thermo-only. Omitted (not all-null) when FAIMS unused. Bruker must not populate this (§7). Always 32-bit (§8). |
+| `faims_cv` | float | volts | Thermo-only. Producers omit the column when FAIMS is not used. A column where every row is null means that reading the CV was attempted and failed in every row. Bruker must not populate this (§7). Always 32-bit (§8). |
 | `injection_time_ms` | float | milliseconds | Thermo: ion injection time of the scan, from the scan trailer. Bruker: ion accumulation time of the frame (`Frames.AccumulationTime`). Always 32-bit (§8). |
 
 ### 5.3 Reserved columns (not implemented in v1)
@@ -107,7 +107,7 @@ These columns are not planned and their names are not reserved. Adding any of th
 ## 7. Vendor / row-granularity semantics
 **Terminology note:** Bruker's own database schema uses "Scan" to mean one ion-mobility (TIMS) sub-measurement inside a Frame (`Frames.NumScans`, typically several hundred per frame). This is unrelated to this document's `scan_id` column, which for Bruker rows always equals `Frames.Id`, i.e. it identifies a Frame, not one of these internal TIMS scans. Don't conflate the two "scan" usages.
 
-**Thermo (all levels):** `scan_id` = native scan number, globally continuous. One row = one spectrum; TIC and base peak are genuine per-spectrum values, read directly from the scan header (scan statistics), no aggregation of any kind.
+**Thermo (all levels):** `scan_id` = native scan number, globally continuous. One row = one spectrum; TIC and base peak are genuine per-spectrum values, read directly from the scan header (scan statistics), no aggregation of any kind. ThermoScanHeaderExtractor writes `faims_cv` only when at least one scan has a CV other than 0 V, so a run entirely at 0 V looks like a run without FAIMS.
 
 **Bruker MS1:** `scan_id` = `Frames.Id`; one frame = one conventional (ion-mobility-collapsed) MS1 spectrum. Both `total_ion_current` (`Frames.SummedIntensities`) and `base_peak_intensity` (`Frames.MaxIntensity`) are native per-frame values, computed by Bruker's own acquisition software as the sum/max across that frame's internal TIMS mobility scans. This collapse is expected and benign: it's the same operation any non-IMS instrument performs implicitly to produce one full-range scan per RT point, and it does not mix together separate logical spectra. `row_granularity="spectrum"`.
 

@@ -12,6 +12,9 @@
 ### Removed
 - **Breaking:** `ColumnLogicalType.TEXT`. It was only used by `activation_type`, which is no longer reserved, so no schema-v1 column has a text type.
 
+### Fixed
+- Trace files whose `faims_cv` column is null in only some rows now load, as the specification allows, and `extract` writes them. Reports still leave such a file out, with a message that the FAIMS CV is missing for some scans.
+
 ## [0.1.0] - 2026-11-05
 
 ### Added

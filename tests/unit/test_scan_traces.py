@@ -103,14 +103,22 @@ class TestScanTraceValidation:
 
         validate_trace(_table(), metadata)
 
-    def test_load_accepts_numeric_faims_column(self, tmp_path: Path) -> None:
-        table = _table().append_column("faims_cv", pa.array([-50.0, -60.0], type=pa.float32()))
+    def test_load_accepts_faims_column_with_some_null_values(self, tmp_path: Path) -> None:
+        table = _table().append_column("faims_cv", pa.array([-50.0, None], type=pa.float32()))
         path = tmp_path / "faims.parquet"
         pq.write_table(table.replace_schema_metadata(_metadata()), path, compression="snappy")
 
         artifact = load_trace(path)
 
-        assert artifact.table["faims_cv"].to_pylist() == [-50.0, -60.0]
+        assert artifact.table["faims_cv"].to_pylist() == [-50.0, None]
+
+    def test_load_rejects_non_finite_faims_value(self, tmp_path: Path) -> None:
+        table = _table().append_column("faims_cv", pa.array([float("nan"), None], type=pa.float32()))
+        path = tmp_path / "faims-nan.parquet"
+        pq.write_table(table.replace_schema_metadata(_metadata()), path, compression="snappy")
+
+        with pytest.raises(ArtifactValidationError, match="finite"):
+            load_trace(path)
 
     def test_strict_load_accepts_injection_time_column_with_null_values(self, tmp_path: Path) -> None:
         table = _table().append_column("injection_time_ms", pa.array([5.0, None], type=pa.float32()))

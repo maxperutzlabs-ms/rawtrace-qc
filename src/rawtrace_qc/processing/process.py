@@ -51,7 +51,8 @@ def process_traces(
             FAIMS-bearing table.
         ArtifactValidationError: If an artifact violates the schema-v1 trace
             contract.
-        ProcessingError: If an input is not a `TraceArtifact`.
+        ProcessingError: If an input is not a `TraceArtifact`, or a selected
+            MS level has FAIMS CVs missing for some scans.
     """
     selected_options = options or ProcessingOptions()
     processed: list[ProcessedTable] = []
@@ -147,8 +148,7 @@ def _partition_faims(
         return ((None, table),)
     if len(non_null_values) != len(values):
         raise ProcessingError(
-            "A processed MS-level partition contains both null and non-null "
-            "faims_cv values; the rows cannot be assigned unambiguously."
+            "FAIMS CV is missing for some scans, so they cannot be assigned to a CV."
         )
     if any(not isinstance(value, (int, float)) for value in non_null_values):
         raise ProcessingError(

@@ -248,10 +248,6 @@ def _validate_faims(table: pa.Table) -> None:
 
     values = table["faims_cv"].combine_chunks().to_pylist()
     non_null_values = [value for value in values if value is not None]
-    if non_null_values and len(non_null_values) != len(values):
-        raise ArtifactValidationError(
-            "A trace faims_cv column must be entirely null or contain no null values."
-        )
     if any(not math.isfinite(float(value)) for value in non_null_values):
         raise ArtifactValidationError(
             "A trace faims_cv column must contain finite values."
