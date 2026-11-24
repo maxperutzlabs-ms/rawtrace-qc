@@ -5,6 +5,7 @@ from contextlib import closing
 from pathlib import Path
 
 import pytest
+from rawtrace_qc.thermo.runner import THERMO_CONFIG_DIRECTORY_VARIABLE
 
 from tests.support.collection import tag_test_items
 from tests.support.thermo_helper import expire_stale_test_cache, resolve_integration_thermo_helper
@@ -22,6 +23,14 @@ def _expire_stale_thermo_cache() -> None:
 @pytest.fixture(scope="session")
 def thermo_helper_executable() -> Path:
     return resolve_integration_thermo_helper()
+
+
+@pytest.fixture
+def isolated_data_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    data_directory = tmp_path / "appdata"
+    monkeypatch.setattr("rawtrace_qc.environment.user_data_dir", lambda **_kwargs: str(data_directory))
+    monkeypatch.delenv(THERMO_CONFIG_DIRECTORY_VARIABLE, raising=False)
+    return data_directory
 
 
 @pytest.fixture

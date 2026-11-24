@@ -107,11 +107,12 @@ Some test fixtures have special rules:
 - **Bruker:** The `bruker_fixture` in `tests/conftest.py` builds a small SQLite `analysis.tdf`, so these tests need no external files.
 - **Thermo:** `tests/data/thermo/exploris480_ms1_dia_3cycles.raw` is a real acquisition. Its `README.md` lists the expected output.
 - **Mock helper:** Unit tests use `MockThermoHelper`, which keeps the license state in memory and writes nothing to disk.
-- **Real helper:** Integration tests use the `thermo_helper_executable` fixture. It uses the managed helper if that is ready, and otherwise it installs the helper in `tests/.cache`. The fixture skips the test on an unsupported system or if the user has not accepted the license. A separate session fixture purges `tests/.cache` after 24 hours.
+- **Data folder:** `tests/unit/conftest.py` gives every unit test the `isolated_data_directory` fixture from `tests/conftest.py`. It points the application data folder at a temporary folder and removes `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR`, so unit tests never touch the real data folder or license state.
+- **Real helper:** Integration tests use the `thermo_helper_executable` fixture. It uses the managed helper if that is ready. Otherwise, it extracts the downloaded archive into `tests/.cache` and uses that helper by its explicit path, so its license is checked in the same data folder as the managed helper. The fixture skips the test on an unsupported system or if the user has not accepted the license, and it fails if the helper cannot use its license folder. A separate session fixture purges `tests/.cache` after 24 hours.
 - **Network:** Use `urlopen_or_skip()` from `tests/support/network.py`. It skips on network and proxy failures, but it fails on a missing asset.
 - **Qt:** GUI tests use `pytest.importorskip` and the `offscreen` Qt platform, so they run without a display.
 
-rawtrace-qc records the license state in the data folder of the user account, and the tests do not redirect it. Mock tests therefore cover the unaccepted state and the acceptance flow. CI accepts the license on Windows on purpose, so that the real Thermo integration tests run there.
+Integration tests with the real helper use the license state in the data folder of the user account and never accept the license. Mock tests therefore cover the unaccepted state and the acceptance flow. CI accepts the license on Windows on purpose, so that the real Thermo integration tests run there.
 
 ## Code conventions
 
@@ -252,6 +253,8 @@ Rawtrace-qc finds the helper in one of two ways:
 
 - A caller can give an explicit path to the executable or to its folder. If this path does not lead to the executable, rawtrace-qc raises `ThermoHelperNotFoundError` and does not use the managed helper instead.
 - Without an explicit path, rawtrace-qc uses the managed helper in `<user_data_dir>/tools/thermoscanheaderextractor/<version>/<runtime>/`.
+
+`<user_data_dir>` is the application data folder of the user account, which `default_data_directory()` returns. It cannot be changed, so the library, the CLI and the desktop application always find the same managed helper and, unless `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR` is set, the same license folder.
 
 `get_thermo_helper_status()` has no side effects and returns one of these states: `READY`, `NOT_INSTALLED`, `UNLICENSED`, `INVALID_VERSION`, or `UNSUPPORTED_PLATFORM`. It reports an unusable explicit path as `NOT_INSTALLED`. In contrast, `locate_thermo_helper()` returns the executable or raises a specific `ThermoHelperError`.
 

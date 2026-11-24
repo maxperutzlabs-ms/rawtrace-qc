@@ -20,6 +20,7 @@
 - rawtrace-qc keeps the license acceptance of the Thermo tool in its own data folder, separately for each version of the Thermo tool. After this update, you accept the new Thermo license once more. The new `thermo_config_directory()` returns this folder. If `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR` is set, the Thermo tool uses that folder instead.
 
 ### Removed
+- **Breaking:** The `data_directory` argument of `ThermoExtractor`, `locate_thermo_helper()`, `get_thermo_helper_status()`, `find_thermo_helper_path()`, `managed_thermo_helper_directory()`, `install_thermo_helper()`, `get_thermo_license_text()`, `accept_thermo_license()` and `helper_tool_directory()`, and the `override` argument of `default_data_directory()`. rawtrace-qc always uses the application data folder of the user account.
 - **Breaking:** The `--data-directory` option of `rawtrace-qc thermo status`, `thermo install` and `thermo accept-license`. These commands now always use the application data folder of the user account, which `extract` and the desktop application also use.
 - **Breaking:** `RUNTIME_FALLBACKS`. Every supported runtime now has its own pinned build, so there is nothing to replace it with.
 - **Breaking:** `is_license_accepted()`. Use `query_license_status(executable).accepted` instead.

@@ -97,7 +97,6 @@ class ThermoHelperStatus:
 def locate_thermo_helper(
     explicit_path: Path | str | None = None,
     *,
-    data_directory: Path | str | None = None,
     specification: ThermoHelperSpecification | None = None,
 ) -> Path:
     """Locate and return a usable ThermoScanHeaderExtractor executable.
@@ -110,8 +109,6 @@ def locate_thermo_helper(
     Args:
         explicit_path: Optional explicit executable or directory path. Defaults
             to None.
-        data_directory: Data directory root. If None (default), uses the
-            platform default user data directory.
         specification: Release specification. If None (default), resolve the
             specification for the current host runtime.
     Returns:
@@ -136,11 +133,7 @@ def locate_thermo_helper(
         print(f"Using helper at: {executable}")
         ```
     """
-    status = get_thermo_helper_status(
-        explicit_path,
-        data_directory=data_directory,
-        specification=specification,
-    )
+    status = get_thermo_helper_status(explicit_path, specification=specification)
 
     if status.state is ThermoHelperState.NOT_INSTALLED:
         raise ThermoHelperNotFoundError(status.message)
@@ -179,7 +172,6 @@ def is_thermo_setup_error(error: BaseException) -> bool:
 def get_thermo_helper_status(
     explicit_path: Path | str | None = None,
     *,
-    data_directory: Path | str | None = None,
     specification: ThermoHelperSpecification | None = None,
 ) -> ThermoHelperStatus:
     """Inspect the status of ThermoScanHeaderExtractor without side effects.
@@ -192,8 +184,6 @@ def get_thermo_helper_status(
     Args:
         explicit_path: Optional explicit executable or directory path. Defaults
             to None.
-        data_directory: Data directory root. If None (default), uses the
-            platform default user data directory.
         specification: Release specification. If None (default), resolve the
             specification for the current host runtime.
     Returns:
@@ -213,11 +203,7 @@ def get_thermo_helper_status(
             )
 
     try:
-        candidate = find_thermo_helper_path(
-            explicit_path,
-            data_directory=data_directory,
-            specification=specification,
-        )
+        candidate = find_thermo_helper_path(explicit_path, specification=specification)
     except ThermoHelperNotFoundError as error:
         return ThermoHelperStatus(
             state=ThermoHelperState.NOT_INSTALLED,
@@ -230,9 +216,7 @@ def get_thermo_helper_status(
 
     if candidate is None:
         managed_path = (
-            managed_thermo_helper_directory(
-                specification, data_directory=data_directory
-            )
+            managed_thermo_helper_directory(specification)
             / specification.executable_name
         )
         return ThermoHelperStatus(
@@ -248,9 +232,7 @@ def get_thermo_helper_status(
             expected_version=specification.version,
         )
 
-    config_directory = thermo_config_directory(
-        specification, data_directory=data_directory
-    )
+    config_directory = thermo_config_directory(specification)
     try:
         reported_version = query_helper_version(
             candidate, config_directory=config_directory
@@ -336,7 +318,6 @@ def get_thermo_helper_status(
 def find_thermo_helper_path(
     explicit_path: Path | str | None = None,
     *,
-    data_directory: Path | str | None = None,
     specification: ThermoHelperSpecification | None = None,
 ) -> Path | None:
     """Resolve the candidate ThermoScanHeaderExtractor path by priority.
@@ -348,8 +329,6 @@ def find_thermo_helper_path(
     Args:
         explicit_path: Optional explicit executable or directory path. Defaults
             to None.
-        data_directory: Data directory root. If None (default), uses the
-            platform default user data directory.
         specification: Release specification. If None (default), resolve the
             specification for the current host runtime.
 
@@ -382,8 +361,7 @@ def find_thermo_helper_path(
         )
 
     managed_path = (
-        managed_thermo_helper_directory(specification, data_directory=data_directory)
-        / specification.executable_name
+        managed_thermo_helper_directory(specification) / specification.executable_name
     ).resolve()
     if managed_path.is_file():
         return managed_path
@@ -393,19 +371,15 @@ def find_thermo_helper_path(
 
 def managed_thermo_helper_directory(
     specification: ThermoHelperSpecification | None = None,
-    *,
-    data_directory: Path | str | None = None,
 ) -> Path:
     """Return the managed install directory of a helper release for one runtime.
 
-    The directory is `<data_directory>/tools/<tool>/<version>/<runtime>` and is
-    not created by this function.
+    The directory is `tools/<tool>/<version>/<runtime>` in the folder of
+    `default_data_directory()` and is not created by this function.
 
     Args:
         specification: Release specification. If None (default), resolve the
             specification for the current host runtime.
-        data_directory: Data directory root. If None (default), uses the
-            platform default user data directory.
 
     Returns:
         The managed install directory path.
@@ -420,7 +394,6 @@ def managed_thermo_helper_directory(
         specification.tool_name,
         specification.version,
         specification.runtime,
-        data_directory=data_directory,
     )
 
 

@@ -88,7 +88,7 @@ class TestThermoExtractorUnit:
 
         monkeypatch.setattr("rawtrace_qc.extractors.thermo.run_thermo_helper", mock_runner)
 
-        extractor = ThermoExtractor(data_directory=tmp_path / "empty-app-data")
+        extractor = ThermoExtractor()
         with pytest.raises(ThermoHelperNotFoundError):
             extractor.extract(raw_file)
 
@@ -216,11 +216,9 @@ class TestThermoExtractorUnit:
         monkeypatch.setattr("rawtrace_qc.extractors.thermo.run_thermo_helper", mock_cancelled_runner)
 
         with pytest.raises(OperationCancelledError):
-            ThermoExtractor(data_directory=tmp_path / "appdata", cancel=cancel).extract(
-                raw_file, output_directory=output_directory
-            )
+            ThermoExtractor(cancel=cancel).extract(raw_file, output_directory=output_directory)
 
-        assert received == [cancel, thermo_config_directory(data_directory=tmp_path / "appdata")]
+        assert received == [cancel, thermo_config_directory()]
         assert not output_directory.exists()
 
     @pytest.mark.parametrize(

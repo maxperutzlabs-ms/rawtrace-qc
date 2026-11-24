@@ -88,16 +88,13 @@ def test_gui_settings_loads_legacy_discovery_units(tmp_path: Path) -> None:
     assert loaded.min_age_minutes == 1.5
 
 
-def test_gui_defaults_use_platformdirs_appdata(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    appdata = tmp_path / "appdata"
-    monkeypatch.setattr("rawtrace_qc.environment.user_data_dir", lambda **_kwargs: str(appdata))
-
+def test_gui_defaults_use_platformdirs_appdata(isolated_data_directory: Path) -> None:
     settings = GuiSettings()
 
-    assert default_data_directory() == appdata
-    assert default_config_path() == appdata / "config.json"
-    assert settings.cache_directory == appdata / "traces"
-    assert settings.report_directory == appdata / "reports"
+    assert default_data_directory() == isolated_data_directory
+    assert default_config_path() == isolated_data_directory / "config.json"
+    assert settings.cache_directory == isolated_data_directory / "traces"
+    assert settings.report_directory == isolated_data_directory / "reports"
 
 
 def test_gui_keeps_its_own_discovery_thresholds() -> None:
@@ -107,13 +104,10 @@ def test_gui_keeps_its_own_discovery_thresholds() -> None:
     assert options.min_age_seconds == 120
 
 
-def test_save_settings_creates_the_default_appdata_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    appdata = tmp_path / "appdata"
-    monkeypatch.setattr("rawtrace_qc.environment.user_data_dir", lambda **_kwargs: str(appdata))
-
+def test_save_settings_creates_the_default_appdata_config(isolated_data_directory: Path) -> None:
     saved_path = save_settings(GuiSettings())
 
-    assert saved_path == appdata / "config.json"
+    assert saved_path == isolated_data_directory / "config.json"
     assert saved_path.is_file()
 
 

@@ -20,7 +20,6 @@ from rawtrace_qc.thermo import (
     managed_thermo_helper_directory,
     thermo_config_directory,
 )
-from rawtrace_qc.thermo.runner import THERMO_CONFIG_DIRECTORY_VARIABLE
 from tests.support.mock_helper import MockThermoHelper, create_mock_helper_file
 from tests.support.thermo_helper import WIN_X64_SPECIFICATION
 
@@ -75,13 +74,13 @@ class TestExplicitHelperPath:
     def test_missing_explicit_path_raises_without_running_the_managed_helper(
         self, license_function: Callable[..., object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        managed_dir = managed_thermo_helper_directory(WIN_X64_SPECIFICATION, data_directory=tmp_path)
+        managed_dir = managed_thermo_helper_directory(WIN_X64_SPECIFICATION)
         create_mock_helper_file(managed_dir)
         mock_runner = MockThermoHelper()
         monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
 
         with pytest.raises(ThermoHelperNotFoundError, match="does_not_exist"):
-            license_function(tmp_path / "does_not_exist", data_directory=tmp_path)
+            license_function(tmp_path / "does_not_exist")
 
         assert mock_runner.commands_run == []
         assert mock_runner.license_accepted is False
@@ -157,14 +156,13 @@ class TestLicenseFolder:
     def test_every_helper_call_uses_the_config_folder_of_the_data_directory(
         self, operation: Callable[..., object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.delenv(THERMO_CONFIG_DIRECTORY_VARIABLE, raising=False)
         executable = create_mock_helper_file(tmp_path / "explicit")
         mock_runner = MockThermoHelper()
         monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
 
-        operation(executable, data_directory=tmp_path / "appdata")
+        operation(executable)
 
-        expected = str(thermo_config_directory(data_directory=tmp_path / "appdata"))
+        expected = str(thermo_config_directory())
         assert mock_runner.config_directories == [expected] * len(mock_runner.commands_run)
 
 

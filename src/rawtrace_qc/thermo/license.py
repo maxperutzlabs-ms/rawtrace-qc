@@ -23,7 +23,6 @@ _CONFIG_ERROR_EXIT_CODE = 5
 def get_thermo_license_text(
     explicit_path: Path | str | None = None,
     *,
-    data_directory: Path | str | None = None,
     specification: ThermoHelperSpecification | None = None,
     timeout: float = 10.0,
 ) -> str:
@@ -35,8 +34,6 @@ def get_thermo_license_text(
     Args:
         explicit_path: Optional helper executable or containing directory.
             Defaults to None.
-        data_directory: Application data directory override. If None (default),
-            uses the platform-specific user data directory.
         specification: Pinned helper release metadata. If None (default),
             resolve the specification for the current host runtime.
         timeout: Maximum command time in seconds. Defaults to 10.0.
@@ -53,14 +50,8 @@ def get_thermo_license_text(
     """
     if specification is None:
         specification = resolve_thermo_helper_specification()
-    executable = _resolve_thermo_helper(
-        explicit_path,
-        data_directory=data_directory,
-        specification=specification,
-    )
-    config_directory = thermo_config_directory(
-        specification, data_directory=data_directory
-    )
+    executable = _resolve_thermo_helper(explicit_path, specification=specification)
+    config_directory = thermo_config_directory(specification)
     locator.verify_helper_version(
         executable,
         expected_version=specification.version,
@@ -85,7 +76,6 @@ def get_thermo_license_text(
 def accept_thermo_license(
     explicit_path: Path | str | None = None,
     *,
-    data_directory: Path | str | None = None,
     specification: ThermoHelperSpecification | None = None,
     timeout: float = 10.0,
 ) -> None:
@@ -94,15 +84,13 @@ def accept_thermo_license(
     Runs the helper's explicit `--agree-to-terms` command only when the helper
     does not already report the license as accepted. Success is confirmed by
     asking the helper again with `--license-status`. The helper records the
-    acceptance in `thermo_config_directory()` of the data directory, so it
-    applies to one helper version. If `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR`
-    is set and not empty, the helper uses that folder instead.
+    acceptance in `thermo_config_directory()`, so it applies to one helper
+    version. If `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR` is set and not empty,
+    the helper uses that folder instead.
 
     Args:
         explicit_path: Optional helper executable or containing directory.
             Defaults to None.
-        data_directory: Application data directory override. If None (default),
-            uses the platform-specific user data directory.
         specification: Pinned helper release metadata. If None (default),
             resolve the specification for the current host runtime.
         timeout: Maximum command time in seconds. Defaults to 10.0.
@@ -122,14 +110,8 @@ def accept_thermo_license(
     """
     if specification is None:
         specification = resolve_thermo_helper_specification()
-    executable = _resolve_thermo_helper(
-        explicit_path,
-        data_directory=data_directory,
-        specification=specification,
-    )
-    config_directory = thermo_config_directory(
-        specification, data_directory=data_directory
-    )
+    executable = _resolve_thermo_helper(explicit_path, specification=specification)
+    config_directory = thermo_config_directory(specification)
     locator.verify_helper_version(
         executable,
         expected_version=specification.version,
@@ -164,13 +146,10 @@ def accept_thermo_license(
 def _resolve_thermo_helper(
     explicit_path: Path | str | None,
     *,
-    data_directory: Path | str | None,
     specification: ThermoHelperSpecification,
 ) -> Path:
     executable = locator.find_thermo_helper_path(
-        explicit_path,
-        data_directory=data_directory,
-        specification=specification,
+        explicit_path, specification=specification
     )
     if executable is None:
         raise ThermoHelperNotFoundError(

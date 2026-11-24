@@ -9,15 +9,8 @@ from rawtrace_qc.cli import thermo as thermo_cli_module
 from rawtrace_qc.errors import ThermoHelperChecksumError, ThermoHelperDownloadError, ThermoHelperInstallConflictError
 from rawtrace_qc.thermo import locator as locator_module
 from rawtrace_qc.thermo import managed_thermo_helper_directory, thermo_config_directory
-from rawtrace_qc.thermo.runner import THERMO_CONFIG_DIRECTORY_VARIABLE
 from tests.support.mock_helper import MockThermoHelper, create_mock_helper_file
 from tests.support.thermo_helper import WIN_X64_SPECIFICATION
-
-
-@pytest.fixture(autouse=True)
-def isolated_data_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("rawtrace_qc.environment.user_data_dir", lambda **_kwargs: str(tmp_path / "appdata"))
-    monkeypatch.delenv(THERMO_CONFIG_DIRECTORY_VARIABLE, raising=False)
 
 
 def _create_helper() -> Path:

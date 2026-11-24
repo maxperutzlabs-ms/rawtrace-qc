@@ -43,7 +43,7 @@ class TestFindThermoHelperPath:
     def test_finds_explicit_file_path_when_present(self, tmp_path: Path) -> None:
         explicit_exe = create_mock_helper_file(tmp_path / "custom")
 
-        result = find_thermo_helper_path(explicit_exe, data_directory=tmp_path / "appdata")
+        result = find_thermo_helper_path(explicit_exe)
 
         assert result == explicit_exe.resolve()
 
@@ -51,47 +51,44 @@ class TestFindThermoHelperPath:
         custom_dir = tmp_path / "custom"
         explicit_exe = create_mock_helper_file(custom_dir)
 
-        result = find_thermo_helper_path(custom_dir, data_directory=tmp_path / "appdata")
+        result = find_thermo_helper_path(custom_dir)
 
         assert result == explicit_exe.resolve()
 
-    def test_finds_managed_install_in_data_directory(self, tmp_path: Path) -> None:
-        data_dir = tmp_path / "appdata"
-        managed_dir = managed_thermo_helper_directory(WIN_X64_SPECIFICATION, data_directory=data_dir)
+    def test_finds_managed_install_in_data_directory(self) -> None:
+        managed_dir = managed_thermo_helper_directory(WIN_X64_SPECIFICATION)
         managed_exe = create_mock_helper_file(managed_dir)
 
-        result = find_thermo_helper_path(data_directory=data_dir)
+        result = find_thermo_helper_path()
 
         assert result == managed_exe.resolve()
 
     def test_explicit_path_takes_priority_over_managed_install(self, tmp_path: Path) -> None:
-        data_dir = tmp_path / "appdata"
-        managed_dir = managed_thermo_helper_directory(WIN_X64_SPECIFICATION, data_directory=data_dir)
+        managed_dir = managed_thermo_helper_directory(WIN_X64_SPECIFICATION)
         create_mock_helper_file(managed_dir)
         explicit_exe = create_mock_helper_file(tmp_path / "custom")
 
-        result = find_thermo_helper_path(explicit_exe, data_directory=data_dir)
+        result = find_thermo_helper_path(explicit_exe)
 
         assert result == explicit_exe.resolve()
 
     def test_raises_for_missing_explicit_path_even_when_managed_install_exists(self, tmp_path: Path) -> None:
-        data_dir = tmp_path / "appdata"
-        managed_dir = managed_thermo_helper_directory(WIN_X64_SPECIFICATION, data_directory=data_dir)
+        managed_dir = managed_thermo_helper_directory(WIN_X64_SPECIFICATION)
         create_mock_helper_file(managed_dir)
         non_existent = tmp_path / "does_not_exist" / "helper.exe"
 
         with pytest.raises(ThermoHelperNotFoundError, match="does_not_exist"):
-            find_thermo_helper_path(non_existent, data_directory=data_dir)
+            find_thermo_helper_path(non_existent)
 
     def test_raises_for_explicit_folder_without_executable(self, tmp_path: Path) -> None:
         empty_folder = tmp_path / "custom"
         empty_folder.mkdir()
 
         with pytest.raises(ThermoHelperNotFoundError, match="custom"):
-            find_thermo_helper_path(empty_folder, data_directory=tmp_path / "appdata")
+            find_thermo_helper_path(empty_folder)
 
-    def test_returns_none_when_no_explicit_path_and_no_managed_install_exist(self, tmp_path: Path) -> None:
-        result = find_thermo_helper_path(data_directory=tmp_path / "appdata")
+    def test_returns_none_when_no_explicit_path_and_no_managed_install_exist(self) -> None:
+        result = find_thermo_helper_path()
 
         assert result is None
 
@@ -121,10 +118,10 @@ class TestGetThermoHelperStatus:
     ) -> None:
         mock_runner = MockThermoHelper(license_accepted=True)
         monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
-        managed_dir = managed_thermo_helper_directory(WIN_X64_SPECIFICATION, data_directory=tmp_path)
+        managed_dir = managed_thermo_helper_directory(WIN_X64_SPECIFICATION)
         create_mock_helper_file(managed_dir)
 
-        status = get_thermo_helper_status(tmp_path / "does_not_exist", data_directory=tmp_path)
+        status = get_thermo_helper_status(tmp_path / "does_not_exist")
 
         assert status.state is ThermoHelperState.NOT_INSTALLED
         assert status.path is None
@@ -132,12 +129,12 @@ class TestGetThermoHelperStatus:
         assert mock_runner.commands_run == []
 
     def test_returns_not_installed_state_when_executable_missing_without_running_process(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         mock_runner = MockThermoHelper()
         monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
 
-        status = get_thermo_helper_status(data_directory=tmp_path / "appdata")
+        status = get_thermo_helper_status()
 
         assert status.state is ThermoHelperState.NOT_INSTALLED
         assert status.path is None
@@ -148,16 +145,15 @@ class TestGetThermoHelperStatus:
         assert len(mock_runner.commands_run) == 0
 
     def test_not_installed_message_names_the_runtime_specific_managed_path(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, isolated_data_directory: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", MockThermoHelper())
-        data_dir = tmp_path / "appdata"
-        legacy_dir = data_dir / "tools" / WIN_X64_SPECIFICATION.tool_name / WIN_X64_SPECIFICATION.version
+        legacy_dir = isolated_data_directory / "tools" / WIN_X64_SPECIFICATION.tool_name / WIN_X64_SPECIFICATION.version
         create_mock_helper_file(legacy_dir)
 
-        status = get_thermo_helper_status(data_directory=data_dir)
+        status = get_thermo_helper_status()
 
-        expected_path = managed_thermo_helper_directory(WIN_X64_SPECIFICATION, data_directory=data_dir)
+        expected_path = managed_thermo_helper_directory(WIN_X64_SPECIFICATION)
         assert status.state is ThermoHelperState.NOT_INSTALLED
         assert str(expected_path / WIN_X64_SPECIFICATION.executable_name) in status.message
         assert expected_path.name == "win-x64"
@@ -298,9 +294,9 @@ class TestLocateThermoHelper:
         with pytest.raises(UnsupportedPlatformError, match="'riscv64'"):
             locate_thermo_helper()
 
-    def test_raises_thermo_helper_not_found_error_when_executable_missing(self, tmp_path: Path) -> None:
+    def test_raises_thermo_helper_not_found_error_when_executable_missing(self) -> None:
         with pytest.raises(ThermoHelperNotFoundError, match="executable was not found"):
-            locate_thermo_helper(data_directory=tmp_path / "appdata")
+            locate_thermo_helper()
 
     def test_raises_thermo_helper_license_error_when_license_not_accepted(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -354,28 +350,26 @@ class TestLocateThermoHelper:
     def test_raises_not_found_for_missing_explicit_path_without_using_managed_install(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        data_dir = tmp_path / "appdata"
-        managed_dir = managed_thermo_helper_directory(WIN_X64_SPECIFICATION, data_directory=data_dir)
+        managed_dir = managed_thermo_helper_directory(WIN_X64_SPECIFICATION)
         create_mock_helper_file(managed_dir)
         mock_runner = MockThermoHelper(version=WIN_X64_SPECIFICATION.version, license_accepted=True)
         monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
 
         with pytest.raises(ThermoHelperNotFoundError, match="does_not_exist"):
-            locate_thermo_helper(tmp_path / "does_not_exist", data_directory=data_dir)
+            locate_thermo_helper(tmp_path / "does_not_exist")
 
         assert mock_runner.commands_run == []
 
     def test_explicit_path_takes_precedence_in_location_resolution(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        data_dir = tmp_path / "appdata"
-        managed_dir = managed_thermo_helper_directory(WIN_X64_SPECIFICATION, data_directory=data_dir)
+        managed_dir = managed_thermo_helper_directory(WIN_X64_SPECIFICATION)
         create_mock_helper_file(managed_dir)
         explicit_exe = create_mock_helper_file(tmp_path / "custom")
         mock_runner = MockThermoHelper(version=WIN_X64_SPECIFICATION.version, license_accepted=True)
         monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
 
-        result = locate_thermo_helper(explicit_exe, data_directory=data_dir)
+        result = locate_thermo_helper(explicit_exe)
 
         assert result == explicit_exe.resolve()
 

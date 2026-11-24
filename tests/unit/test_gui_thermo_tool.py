@@ -225,8 +225,7 @@ class TestThermoToolDialog:
         with ZipFile(archive_path, "w") as archive:
             archive.writestr(WIN_X64_SPECIFICATION.executable_name, b"MZnew-helper")
         specification = replace(WIN_X64_SPECIFICATION, sha256=hashlib.sha256(archive_path.read_bytes()).hexdigest())
-        data_directory = tmp_path / "appdata"
-        install_directory = managed_thermo_helper_directory(specification, data_directory=data_directory)
+        install_directory = managed_thermo_helper_directory(specification)
         install_directory.mkdir(parents=True)
         (install_directory / specification.executable_name).write_bytes(b"MZold-helper")
         (install_directory / "leftover.txt").write_text("stale", encoding="utf-8")
@@ -234,7 +233,7 @@ class TestThermoToolDialog:
         monkeypatch.setattr(
             thermo_tool,
             "install_thermo_helper",
-            partial(install_thermo_helper, data_directory=data_directory, specification=specification),
+            partial(install_thermo_helper, specification=specification),
         )
         monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName", lambda *_args: (str(archive_path), ""))
 

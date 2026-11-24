@@ -194,23 +194,20 @@ def run_thermo_helper(
 
 def thermo_config_directory(
     specification: ThermoHelperSpecification | None = None,
-    *,
-    data_directory: Path | str | None = None,
 ) -> Path:
     """Return the default folder in which the helper records the license acceptance.
 
-    The folder is `<data_directory>/tools/<tool>/<version>/config`, next to the
-    install folders of the helper version and not inside one, so that
-    reinstalling the helper keeps the acceptance. Each helper version has its
-    own folder, so the license is accepted again for every new helper version.
+    The folder is `tools/<tool>/<version>/config` in the folder of
+    `default_data_directory()`, next to the install folders of the helper
+    version and not inside one, so that reinstalling the helper keeps the
+    acceptance. Each helper version has its own folder, so the license is
+    accepted again for every new helper version.
     The folder is not created, because the helper creates it when needed.
 
     Args:
         specification: Release specification. If None (default), uses the
             pinned release. A helper given by an explicit path also uses the
             folder of the pinned release.
-        data_directory: Data directory root. If None (default), uses the
-            platform default user data directory.
 
     Returns:
         The absolute path of the folder.
@@ -221,7 +218,7 @@ def thermo_config_directory(
         if specification is None
         else specification.version
     )
-    root = environment.default_data_directory(data_directory).resolve()
+    root = environment.default_data_directory().resolve()
     return root / "tools" / tool_name / version / "config"
 
 

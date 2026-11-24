@@ -42,7 +42,6 @@ _EXECUTABLE_MODE_BITS = (
 def install_thermo_helper(
     archive_path: Path | str | None = None,
     *,
-    data_directory: Path | str | None = None,
     specification: ThermoHelperSpecification | None = None,
     timeout: float = 60.0,
     overwrite: bool = False,
@@ -64,8 +63,6 @@ def install_thermo_helper(
         archive_path: Local release archive to install, in the archive format
             of the specification (`.zip` or `.tar.gz`). If None (default),
             download the archive from the pinned release URL.
-        data_directory: Application data directory override. If None (default),
-            use the platform-specific user data directory.
         specification: Pinned helper release metadata. If None (default),
             resolve the specification for the current host runtime.
         timeout: Maximum network timeout in seconds. Defaults to 60.0.
@@ -91,9 +88,7 @@ def install_thermo_helper(
     if specification is None:
         specification = resolve_thermo_helper_specification()
 
-    runtime_directory = managed_thermo_helper_directory(
-        specification, data_directory=data_directory
-    ).expanduser()
+    runtime_directory = managed_thermo_helper_directory(specification)
     install_parent = runtime_directory.parent.resolve()
     install_directory = install_parent / runtime_directory.name
 

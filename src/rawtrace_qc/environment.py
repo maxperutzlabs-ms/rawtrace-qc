@@ -22,42 +22,28 @@ def get_machine() -> str:
     return platform.machine()
 
 
-def default_data_directory(override: Path | str | None = None) -> Path:
+def default_data_directory() -> Path:
     """Return the per-user application data directory without creating it.
 
-    If no explicit override is provided, use the location selected by
-    `platformdirs`.
-
-    Args:
-        override: Explicit data directory. If None (default), use the platform
-            default.
+    The location is selected by `platformdirs`.
 
     Returns:
         The application data directory path.
     """
-    if override is not None:
-        return Path(override).expanduser()
     return Path(user_data_dir(appname=_APP_NAME, appauthor=_APP_AUTHOR, roaming=False))
 
 
-def helper_tool_directory(
-    helper_name: str,
-    release_version: str,
-    runtime: str,
-    *,
-    data_directory: Path | str | None = None,
-) -> Path:
+def helper_tool_directory(helper_name: str, release_version: str, runtime: str) -> Path:
     """Return a helper install path isolated by helper name, release, and runtime.
+
+    The path is below `default_data_directory()`.
 
     Args:
         helper_name: Helper tool directory name.
         release_version: Required helper release version.
         runtime: Runtime identifier such as `win-x64`.
-        data_directory: Data directory root. If None (default), use
-            `default_data_directory()`.
 
     Returns:
         The version- and runtime-specific helper directory path.
     """
-    root = default_data_directory(data_directory)
-    return root / "tools" / helper_name / release_version / runtime
+    return default_data_directory() / "tools" / helper_name / release_version / runtime

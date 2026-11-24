@@ -51,7 +51,6 @@ class ThermoExtractor:
         self,
         helper_path: Path | str | None = None,
         *,
-        data_directory: Path | str | None = None,
         specification: ThermoHelperSpecification | None = None,
         timeout: float = 600.0,
         cancel: threading.Event | None = None,
@@ -61,8 +60,6 @@ class ThermoExtractor:
         Args:
             helper_path: Optional explicit path to the ThermoScanHeaderExtractor
                 executable or directory. Defaults to None.
-            data_directory: Application data directory override for locating the
-                managed helper. Defaults to None.
             specification: Pinned helper release metadata. If None (default),
                 resolve the specification for the current host runtime when
                 extracting.
@@ -72,9 +69,6 @@ class ThermoExtractor:
                 None.
         """
         self._helper_path = Path(helper_path) if helper_path is not None else None
-        self._data_directory = (
-            Path(data_directory) if data_directory is not None else None
-        )
         self._specification = specification
         self._timeout = timeout
         self._cancel = cancel
@@ -142,9 +136,7 @@ class ThermoExtractor:
             return ExtractionResult()
 
         executable = locate_thermo_helper(
-            self._helper_path,
-            data_directory=self._data_directory,
-            specification=self._specification,
+            self._helper_path, specification=self._specification
         )
 
         destination_directory = (
@@ -185,9 +177,7 @@ class ThermoExtractor:
                         command,
                         timeout=self._timeout,
                         cancel=self._cancel,
-                        config_directory=thermo_config_directory(
-                            self._specification, data_directory=self._data_directory
-                        ),
+                        config_directory=thermo_config_directory(self._specification),
                     )
                 except ThermoHelperCommandError as error:
                     raise _exit_code_error(

@@ -15,17 +15,16 @@ from rawtrace_qc.errors import (
     ThermoHelperArchiveError,
     ThermoHelperChecksumError,
     ThermoHelperDownloadError,
-    ThermoHelperNotFoundError,
-    ThermoHelperVersionError,
+    ThermoHelperLicenseError,
 )
 from rawtrace_qc.thermo import (
     THERMO_HELPER_RELEASE,
     ThermoHelperSpecification,
-    ThermoHelperState,
     download_thermo_helper_archive,
+    extract_thermo_helper_archive,
     get_thermo_helper_status,
-    install_thermo_helper,
     is_thermo_helper_supported,
+    locate_thermo_helper,
     resolve_thermo_helper_specification,
     verify_thermo_helper_archive,
 )
@@ -142,17 +141,16 @@ def resolve_integration_thermo_helper(
 ) -> Path:
     """Resolve a usable ThermoScanHeaderExtractor executable for integration tests.
 
+    Every helper is checked with the license folder of the per-user data folder, which the integration tests also
+    use when they pass the returned executable as an explicit helper path.
+
     Resolution strategy:
-    1. Check the real per-user application data directory (read-only). If the
-       helper is installed and licensed there, return it.
-    2. Fall back to the persistent test cache directory (`tests/.cache/thermo-helper`).
-    3. Check status at the test cache. If installed and licensed, return it.
-     4. If not installed, install to the test cache. Transient network failures
-         trigger a pytest skip; integrity and installation failures propagate.
-     5. If the helper reports the license as not accepted, skip the test. The
-         license is never accepted on the user's behalf.
-     6. Return the ready executable. Version and helper failures remain test
-         failures.
+    1. Check the managed helper in the per-user data folder (read-only). If it is ready, return it.
+    2. Otherwise, extract the pinned archive into the test cache (`tests/.cache/thermo-helper`), unless an earlier
+       run already did. Transient network failures skip the test; integrity failures propagate.
+    3. Check the cached helper as an explicit helper path. If its license is not accepted, skip the test. The
+       license is never accepted on the user's behalf.
+    4. Return the ready executable. Missing, version and other helper failures remain test failures.
 
     Args:
         specification: Pinned helper specification. If None (default),
@@ -164,42 +162,18 @@ def resolve_integration_thermo_helper(
     """
     specification = specification or resolve_specification_or_skip()
 
-    real_status = get_thermo_helper_status(specification=specification)
-    if real_status.state is ThermoHelperState.READY and real_status.path is not None:
-        return real_status.path
+    managed_status = get_thermo_helper_status(specification=specification)
+    if managed_status.is_ready and managed_status.path is not None:
+        return managed_status.path
 
-    cache_data_dir = cache_root.resolve()
-    cache_status = get_thermo_helper_status(data_directory=cache_data_dir, specification=specification)
-
-    if cache_status.state is ThermoHelperState.INVALID_VERSION:
-        raise ThermoHelperVersionError(cache_status.message)
-    if cache_status.state is ThermoHelperState.READY and cache_status.path is not None:
-        return cache_status.path
-
-    if cache_status.state is ThermoHelperState.NOT_INSTALLED:
-        archive_path = get_or_download_thermo_helper_archive(
-            specification=specification, cache_directory=cache_data_dir / "archives"
-        )
-        install_thermo_helper(archive_path, data_directory=cache_data_dir, specification=specification, timeout=60.0)
-        cache_status = get_thermo_helper_status(data_directory=cache_data_dir, specification=specification)
-        if cache_status.state is ThermoHelperState.INVALID_VERSION:
-            raise ThermoHelperVersionError(cache_status.message)
-
-    if cache_status.state is ThermoHelperState.UNLICENSED:
+    cached_executable = _extract_cached_thermo_helper(specification, cache_root.resolve())
+    try:
+        return locate_thermo_helper(cached_executable, specification=specification)
+    except ThermoHelperLicenseError:
         pytest.skip(
-            "The Thermo helper in the test cache is not licensed. To run this test, set up the helper in the "
-            "default folder with `rawtrace-qc thermo install`, then review and accept the terms with "
-            "`rawtrace-qc thermo accept-license`."
+            "The Thermo license is not accepted. To run this test, set up the helper in the default folder with "
+            "`rawtrace-qc thermo install`, then review and accept the terms with `rawtrace-qc thermo accept-license`."
         )
-
-    if cache_status.state is ThermoHelperState.READY and cache_status.path is not None:
-        return cache_status.path
-
-    if cache_status.state is ThermoHelperState.NOT_INSTALLED:
-        raise ThermoHelperNotFoundError(cache_status.message)
-    if cache_status.state is ThermoHelperState.INVALID_VERSION:
-        raise ThermoHelperVersionError(cache_status.message)
-    raise RuntimeError(f"Thermo helper is not usable: {cache_status.message}")
 
 
 def _read_cache_age(stamp_path: Path) -> float:
@@ -218,3 +192,24 @@ def _is_transient_network_failure(error: ThermoHelperDownloadError) -> bool:
             return True
         cause = cause.__cause__
     return False
+
+
+def _extract_cached_thermo_helper(specification: ThermoHelperSpecification, cache_root: Path) -> Path:
+    helper_directory = cache_root / "helpers" / specification.version / specification.runtime
+    executable = helper_directory / specification.executable_name
+    if executable.is_file():
+        return executable
+
+    archive_path = get_or_download_thermo_helper_archive(
+        specification=specification, cache_directory=cache_root / "archives"
+    )
+    shutil.rmtree(helper_directory, ignore_errors=True)
+    helper_directory.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(
+        prefix=".thermo-helper-extract-", dir=helper_directory.parent
+    ) as temporary_directory:
+        staged_executable = extract_thermo_helper_archive(
+            archive_path, Path(temporary_directory) / "extracted", specification=specification
+        )
+        staged_executable.parent.replace(helper_directory)
+    return executable

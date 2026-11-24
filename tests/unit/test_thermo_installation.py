@@ -80,12 +80,8 @@ def _create_tar_archive(
     return archive_path, replace(specification, sha256=digest)
 
 
-def _managed_directory(data_directory: Path, specification: ThermoHelperSpecification) -> Path:
-    return managed_thermo_helper_directory(specification, data_directory=data_directory)
-
-
-def _assert_no_staging_directories(data_directory: Path, specification: ThermoHelperSpecification) -> None:
-    staging_parent = _managed_directory(data_directory, specification).parent
+def _assert_no_staging_directories(specification: ThermoHelperSpecification) -> None:
+    staging_parent = managed_thermo_helper_directory(specification).parent
     if staging_parent.exists():
         assert tuple(staging_parent.glob(f".{specification.runtime}-install-*")) == ()
 
@@ -100,43 +96,42 @@ class TestInstallThermoHelper:
 
     def test_installs_local_archive_atomically_without_accepting_license(self, tmp_path: Path) -> None:
         archive_path, specification = _create_archive(tmp_path)
-        data_directory = tmp_path / "appdata"
 
-        executable = install_thermo_helper(archive_path, data_directory=data_directory, specification=specification)
+        executable = install_thermo_helper(archive_path, specification=specification)
 
-        managed_directory = _managed_directory(data_directory, specification)
+        managed_directory = managed_thermo_helper_directory(specification)
         assert executable == managed_directory / specification.executable_name
         assert executable.read_bytes() == b"MZmock-helper"
         assert (managed_directory / "ThermoScanHeaderExtractor.dll").read_bytes() == b"mock-dependency"
         assert archive_path.is_file()
-        _assert_no_staging_directories(data_directory, specification)
+        _assert_no_staging_directories(specification)
 
     def test_installs_local_tar_gz_archive(self, tmp_path: Path) -> None:
         archive_path, specification = _create_tar_archive(tmp_path)
-        data_directory = tmp_path / "appdata"
 
-        executable = install_thermo_helper(archive_path, data_directory=data_directory, specification=specification)
+        executable = install_thermo_helper(archive_path, specification=specification)
 
-        assert executable == _managed_directory(data_directory, specification) / "ThermoScanHeaderExtractor"
+        assert executable == managed_thermo_helper_directory(specification) / "ThermoScanHeaderExtractor"
         assert executable.read_bytes() == b"ELFmock-helper"
         assert (executable.parent / "LICENSE.txt").read_bytes() == b"license"
-        _assert_no_staging_directories(data_directory, specification)
+        _assert_no_staging_directories(specification)
 
-    def test_installs_below_version_and_runtime_directories(self, tmp_path: Path) -> None:
+    def test_installs_below_version_and_runtime_directories(
+        self, tmp_path: Path, isolated_data_directory: Path
+    ) -> None:
         archive_path, specification = _create_archive(tmp_path)
-        data_directory = tmp_path / "appdata"
 
-        executable = install_thermo_helper(archive_path, data_directory=data_directory, specification=specification)
+        executable = install_thermo_helper(archive_path, specification=specification)
 
-        expected_directory = data_directory / "tools" / "thermoscanheaderextractor" / specification.version / "win-x64"
+        expected_directory = (
+            isolated_data_directory / "tools" / "thermoscanheaderextractor" / specification.version / "win-x64"
+        )
         assert executable == expected_directory.resolve() / specification.executable_name
 
     def test_writes_runtime_into_install_manifest(self, tmp_path: Path) -> None:
         archive_path, specification = _create_archive(tmp_path)
 
-        executable = install_thermo_helper(
-            archive_path, data_directory=tmp_path / "appdata", specification=specification
-        )
+        executable = install_thermo_helper(archive_path, specification=specification)
 
         manifest = json.loads((executable.parent / ".rawtrace-qc-thermo-helper.json").read_text(encoding="utf-8"))
         assert manifest == {"runtime": "win-x64", "sha256": specification.sha256, "version": specification.version}
@@ -144,10 +139,9 @@ class TestInstallThermoHelper:
     def test_installs_other_runtime_beside_existing_runtime(self, tmp_path: Path) -> None:
         archive_path, specification = _create_archive(tmp_path)
         arm_specification = replace(specification, runtime="win-arm64")
-        data_directory = tmp_path / "appdata"
 
-        first = install_thermo_helper(archive_path, data_directory=data_directory, specification=specification)
-        second = install_thermo_helper(archive_path, data_directory=data_directory, specification=arm_specification)
+        first = install_thermo_helper(archive_path, specification=specification)
+        second = install_thermo_helper(archive_path, specification=arm_specification)
 
         assert first.parent.parent == second.parent.parent
         assert first.parent.name == "win-x64"
@@ -155,21 +149,19 @@ class TestInstallThermoHelper:
 
     def test_refuses_existing_install_whose_manifest_has_a_different_runtime(self, tmp_path: Path) -> None:
         archive_path, specification = _create_archive(tmp_path)
-        data_directory = tmp_path / "appdata"
-        executable = install_thermo_helper(archive_path, data_directory=data_directory, specification=specification)
+        executable = install_thermo_helper(archive_path, specification=specification)
         manifest_path = executable.parent / ".rawtrace-qc-thermo-helper.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         manifest["runtime"] = "win-arm64"
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
         with pytest.raises(ThermoHelperInstallConflictError, match="for runtime 'win-x64'"):
-            install_thermo_helper(data_directory=data_directory, specification=specification)
+            install_thermo_helper(specification=specification)
 
     def test_installs_downloaded_archive_through_the_same_verified_path(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         source_archive, specification = _create_archive(tmp_path)
-        data_directory = tmp_path / "appdata"
         downloads: list[Path] = []
 
         def substitute_download(destination: Path, *, specification: ThermoHelperSpecification, timeout: float) -> Path:
@@ -180,7 +172,7 @@ class TestInstallThermoHelper:
 
         monkeypatch.setattr(installation_module, "download_thermo_helper_archive", substitute_download)
 
-        executable = install_thermo_helper(data_directory=data_directory, specification=specification)
+        executable = install_thermo_helper(specification=specification)
 
         assert executable.is_file()
         assert len(downloads) == 1
@@ -188,34 +180,30 @@ class TestInstallThermoHelper:
     def test_rejects_checksum_mismatch_and_cleans_staging_state(self, tmp_path: Path) -> None:
         archive_path, specification = _create_archive(tmp_path)
         wrong_specification = replace(specification, sha256="0" * 64)
-        data_directory = tmp_path / "appdata"
 
         with pytest.raises(ThermoHelperChecksumError, match="failed SHA-256 verification"):
             install_thermo_helper(
                 archive_path,
-                data_directory=data_directory,
                 specification=wrong_specification,
             )
 
-        assert not _managed_directory(data_directory, wrong_specification).exists()
-        _assert_no_staging_directories(data_directory, wrong_specification)
+        assert not managed_thermo_helper_directory(wrong_specification).exists()
+        _assert_no_staging_directories(wrong_specification)
 
     def test_rejects_corrupt_archive_and_leaves_no_managed_directory(self, tmp_path: Path) -> None:
         archive_path = tmp_path / "corrupt.zip"
         archive_path.write_bytes(b"not a zip archive")
         digest = hashlib.sha256(archive_path.read_bytes()).hexdigest()
         specification = replace(WIN_X64_SPECIFICATION, sha256=digest)
-        data_directory = tmp_path / "appdata"
 
         with pytest.raises(ThermoHelperArchiveError, match="Could not safely extract"):
             install_thermo_helper(
                 archive_path,
-                data_directory=data_directory,
                 specification=specification,
             )
 
-        assert not _managed_directory(data_directory, specification).exists()
-        _assert_no_staging_directories(data_directory, specification)
+        assert not managed_thermo_helper_directory(specification).exists()
+        _assert_no_staging_directories(specification)
 
     def test_rejects_path_traversal_archive_before_writing_outside_target(self, tmp_path: Path) -> None:
         archive_path, specification = _create_archive(
@@ -226,18 +214,16 @@ class TestInstallThermoHelper:
             },
             filename="traversal.zip",
         )
-        data_directory = tmp_path / "appdata"
 
         with pytest.raises(ThermoHelperArchiveError, match="unsafe member path"):
             install_thermo_helper(
                 archive_path,
-                data_directory=data_directory,
                 specification=specification,
             )
 
         assert not (tmp_path / "escape.txt").exists()
-        assert not _managed_directory(data_directory, specification).exists()
-        _assert_no_staging_directories(data_directory, specification)
+        assert not managed_thermo_helper_directory(specification).exists()
+        _assert_no_staging_directories(specification)
 
     def test_interrupted_publish_leaves_no_partial_install_directory(
         self,
@@ -245,7 +231,6 @@ class TestInstallThermoHelper:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         archive_path, specification = _create_archive(tmp_path)
-        data_directory = tmp_path / "appdata"
 
         def interrupt_publish(_payload_directory: Path, _install_directory: Path) -> None:
             raise OSError("simulated interrupted install")
@@ -255,39 +240,33 @@ class TestInstallThermoHelper:
         with pytest.raises(ThermoHelperInstallationError, match="Could not atomically install"):
             install_thermo_helper(
                 archive_path,
-                data_directory=data_directory,
                 specification=specification,
             )
 
-        assert not _managed_directory(data_directory, specification).exists()
-        _assert_no_staging_directories(data_directory, specification)
+        assert not managed_thermo_helper_directory(specification).exists()
+        _assert_no_staging_directories(specification)
 
     def test_reinstalling_identical_archive_is_idempotent(self, tmp_path: Path) -> None:
         archive_path, specification = _create_archive(tmp_path)
-        data_directory = tmp_path / "appdata"
         first = install_thermo_helper(
             archive_path,
-            data_directory=data_directory,
             specification=specification,
         )
         first_contents = first.read_bytes()
 
         second = install_thermo_helper(
             archive_path,
-            data_directory=data_directory,
             specification=specification,
         )
 
         assert second == first
         assert second.read_bytes() == first_contents
-        _assert_no_staging_directories(data_directory, specification)
+        _assert_no_staging_directories(specification)
 
     def test_refuses_to_overwrite_different_archive_at_same_version(self, tmp_path: Path) -> None:
         first_archive, first_specification = _create_archive(tmp_path, filename="first.zip")
-        data_directory = tmp_path / "appdata"
         executable = install_thermo_helper(
             first_archive,
-            data_directory=data_directory,
             specification=first_specification,
         )
         second_archive, second_specification = _create_archive(
@@ -300,7 +279,6 @@ class TestInstallThermoHelper:
         with pytest.raises(ThermoHelperInstallConflictError, match="refusing to silently overwrite"):
             install_thermo_helper(
                 second_archive,
-                data_directory=data_directory,
                 specification=second_specification,
             )
 
@@ -308,23 +286,21 @@ class TestInstallThermoHelper:
 
     def test_replaces_install_directory_without_executable_from_local_archive(self, tmp_path: Path) -> None:
         archive_path, specification = _create_archive(tmp_path)
-        data_directory = tmp_path / "appdata"
-        executable = install_thermo_helper(archive_path, data_directory=data_directory, specification=specification)
+        executable = install_thermo_helper(archive_path, specification=specification)
         executable.unlink()
         (executable.parent / "leftover.txt").write_text("stale", encoding="utf-8")
 
-        reinstalled = install_thermo_helper(archive_path, data_directory=data_directory, specification=specification)
+        reinstalled = install_thermo_helper(archive_path, specification=specification)
 
         assert reinstalled.read_bytes() == b"MZmock-helper"
         assert not (reinstalled.parent / "leftover.txt").exists()
-        _assert_no_staging_directories(data_directory, specification)
+        _assert_no_staging_directories(specification)
 
     def test_replaces_empty_install_directory_from_download(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         archive_path, specification = _create_archive(tmp_path)
-        data_directory = tmp_path / "appdata"
-        managed_directory = _managed_directory(data_directory, specification)
+        managed_directory = managed_thermo_helper_directory(specification)
         managed_directory.mkdir(parents=True)
 
         def copy_download(destination: Path, *, specification: ThermoHelperSpecification, timeout: float) -> Path:
@@ -333,56 +309,47 @@ class TestInstallThermoHelper:
 
         monkeypatch.setattr(installation_module, "download_thermo_helper_archive", copy_download)
 
-        executable = install_thermo_helper(data_directory=data_directory, specification=specification)
+        executable = install_thermo_helper(specification=specification)
 
         assert executable.read_bytes() == b"MZmock-helper"
-        _assert_no_staging_directories(data_directory, specification)
+        _assert_no_staging_directories(specification)
 
     def test_refuses_install_location_that_is_a_file(self, tmp_path: Path) -> None:
         archive_path, specification = _create_archive(tmp_path)
-        data_directory = tmp_path / "appdata"
-        managed_directory = _managed_directory(data_directory, specification)
+        managed_directory = managed_thermo_helper_directory(specification)
         managed_directory.parent.mkdir(parents=True)
         managed_directory.write_text("not a directory", encoding="utf-8")
 
         with pytest.raises(ThermoHelperInstallConflictError, match="not a regular installation directory"):
-            install_thermo_helper(archive_path, data_directory=data_directory, specification=specification)
+            install_thermo_helper(archive_path, specification=specification)
 
         assert managed_directory.read_text(encoding="utf-8") == "not a directory"
 
     def test_overwrite_replaces_a_different_install_and_removes_its_files(self, tmp_path: Path) -> None:
         first_archive, first_specification = _create_archive(tmp_path, filename="first.zip")
-        data_directory = tmp_path / "appdata"
-        executable = install_thermo_helper(
-            first_archive, data_directory=data_directory, specification=first_specification
-        )
+        executable = install_thermo_helper(first_archive, specification=first_specification)
         (executable.parent / "leftover.txt").write_text("stale", encoding="utf-8")
         second_archive, second_specification = _create_archive(
             tmp_path, {WIN_X64_SPECIFICATION.executable_name: b"MZnew-helper"}, filename="second.zip"
         )
 
-        replaced = install_thermo_helper(
-            second_archive, data_directory=data_directory, specification=second_specification, overwrite=True
-        )
+        replaced = install_thermo_helper(second_archive, specification=second_specification, overwrite=True)
 
         assert replaced.read_bytes() == b"MZnew-helper"
         assert not (replaced.parent / "leftover.txt").exists()
-        _assert_no_staging_directories(data_directory, second_specification)
+        _assert_no_staging_directories(second_specification)
 
     def test_install_and_overwrite_keep_an_existing_license_acceptance(self, tmp_path: Path) -> None:
-        data_directory = tmp_path / "appdata"
         first_archive, first_specification = _create_archive(tmp_path, filename="first.zip")
-        marker = thermo_config_directory(first_specification, data_directory=data_directory) / "accepted"
+        marker = thermo_config_directory(first_specification) / "accepted"
         marker.parent.mkdir(parents=True)
         marker.touch()
         second_archive, second_specification = _create_archive(
             tmp_path, {WIN_X64_SPECIFICATION.executable_name: b"MZnew-helper"}, filename="second.zip"
         )
 
-        install_thermo_helper(first_archive, data_directory=data_directory, specification=first_specification)
-        install_thermo_helper(
-            second_archive, data_directory=data_directory, specification=second_specification, overwrite=True
-        )
+        install_thermo_helper(first_archive, specification=first_specification)
+        install_thermo_helper(second_archive, specification=second_specification, overwrite=True)
 
         assert marker.is_file()
 
@@ -390,8 +357,7 @@ class TestInstallThermoHelper:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         archive_path, specification = _create_archive(tmp_path)
-        data_directory = tmp_path / "appdata"
-        executable = install_thermo_helper(archive_path, data_directory=data_directory, specification=specification)
+        executable = install_thermo_helper(archive_path, specification=specification)
         executable.write_bytes(b"broken")
 
         def copy_download(destination: Path, *, specification: ThermoHelperSpecification, timeout: float) -> Path:
@@ -400,35 +366,29 @@ class TestInstallThermoHelper:
 
         monkeypatch.setattr(installation_module, "download_thermo_helper_archive", copy_download)
 
-        replaced = install_thermo_helper(data_directory=data_directory, specification=specification, overwrite=True)
+        replaced = install_thermo_helper(specification=specification, overwrite=True)
 
         assert replaced.read_bytes() == b"MZmock-helper"
 
     def test_overwrite_replaces_a_file_at_the_install_location(self, tmp_path: Path) -> None:
         archive_path, specification = _create_archive(tmp_path)
-        data_directory = tmp_path / "appdata"
-        managed_directory = _managed_directory(data_directory, specification)
+        managed_directory = managed_thermo_helper_directory(specification)
         managed_directory.parent.mkdir(parents=True)
         managed_directory.write_text("not a directory", encoding="utf-8")
 
-        executable = install_thermo_helper(
-            archive_path, data_directory=data_directory, specification=specification, overwrite=True
-        )
+        executable = install_thermo_helper(archive_path, specification=specification, overwrite=True)
 
         assert executable.read_bytes() == b"MZmock-helper"
 
     def test_overwrite_keeps_the_existing_install_when_the_archive_is_rejected(self, tmp_path: Path) -> None:
         archive_path, specification = _create_archive(tmp_path)
-        data_directory = tmp_path / "appdata"
-        executable = install_thermo_helper(archive_path, data_directory=data_directory, specification=specification)
+        executable = install_thermo_helper(archive_path, specification=specification)
         other_archive, _ = _create_archive(
             tmp_path, {WIN_X64_SPECIFICATION.executable_name: b"MZother-helper"}, filename="other.zip"
         )
 
         with pytest.raises(ThermoHelperChecksumError):
-            install_thermo_helper(
-                other_archive, data_directory=data_directory, specification=specification, overwrite=True
-            )
+            install_thermo_helper(other_archive, specification=specification, overwrite=True)
 
         assert executable.read_bytes() == b"MZmock-helper"
 
@@ -436,8 +396,7 @@ class TestInstallThermoHelper:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         archive_path, specification = _create_archive(tmp_path)
-        data_directory = tmp_path / "appdata"
-        executable = install_thermo_helper(archive_path, data_directory=data_directory, specification=specification)
+        executable = install_thermo_helper(archive_path, specification=specification)
         original_rename = Path.rename
 
         def fail_rename_of_install(self: Path, target: Path) -> Path:
@@ -448,9 +407,7 @@ class TestInstallThermoHelper:
         monkeypatch.setattr(Path, "rename", fail_rename_of_install)
 
         with pytest.raises(ThermoHelperInstallationError, match="in use"):
-            install_thermo_helper(
-                archive_path, data_directory=data_directory, specification=specification, overwrite=True
-            )
+            install_thermo_helper(archive_path, specification=specification, overwrite=True)
 
         assert executable.read_bytes() == b"MZmock-helper"
 
@@ -458,8 +415,7 @@ class TestInstallThermoHelper:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         archive_path, specification = _create_archive(tmp_path)
-        data_directory = tmp_path / "appdata"
-        managed_directory = _managed_directory(data_directory, specification)
+        managed_directory = managed_thermo_helper_directory(specification)
         managed_directory.mkdir(parents=True)
         original_rename = Path.rename
 
@@ -471,19 +427,14 @@ class TestInstallThermoHelper:
         monkeypatch.setattr(Path, "rename", fail_rename_of_managed_directory)
 
         with pytest.raises(ThermoHelperInstallationError, match="in use") as error:
-            install_thermo_helper(archive_path, data_directory=data_directory, specification=specification)
+            install_thermo_helper(archive_path, specification=specification)
 
         assert not isinstance(error.value, ThermoHelperInstallConflictError)
         assert managed_directory.is_dir()
-        _assert_no_staging_directories(data_directory, specification)
+        _assert_no_staging_directories(specification)
 
-    def test_network_failure_from_download_function_cleans_staging_state(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
+    def test_network_failure_from_download_function_cleans_staging_state(self, monkeypatch: pytest.MonkeyPatch) -> None:
         specification = WIN_X64_SPECIFICATION
-        data_directory = tmp_path / "appdata"
 
         def fail_download(
             _destination: Path,
@@ -497,12 +448,11 @@ class TestInstallThermoHelper:
 
         with pytest.raises(ThermoHelperDownloadError, match="Network or proxy failure"):
             install_thermo_helper(
-                data_directory=data_directory,
                 specification=specification,
             )
 
-        assert not _managed_directory(data_directory, specification).exists()
-        _assert_no_staging_directories(data_directory, specification)
+        assert not managed_thermo_helper_directory(specification).exists()
+        _assert_no_staging_directories(specification)
 
 
 class TestDownloadThermoHelperArchive:

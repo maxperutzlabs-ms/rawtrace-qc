@@ -250,33 +250,29 @@ class TestRunThermoHelper:
 
 
 class TestThermoConfigDirectory:
-    def test_returns_an_absolute_folder_below_the_data_directory(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.chdir(tmp_path)
-
-        config_directory = thermo_config_directory(data_directory="appdata")
+    def test_returns_an_absolute_folder_below_the_data_directory(self, isolated_data_directory: Path) -> None:
+        config_directory = thermo_config_directory()
 
         assert config_directory == (
-            tmp_path.resolve() / "appdata" / "tools" / THERMO_HELPER_NAME / THERMO_HELPER_RELEASE.version / "config"
+            isolated_data_directory.resolve() / "tools" / THERMO_HELPER_NAME / THERMO_HELPER_RELEASE.version / "config"
         )
 
 
 class TestThermoHelperEnvironment:
     @pytest.mark.parametrize(
         ("variable_value", "expected"),
-        [("", str(thermo_config_directory())), ("/user/choice", "/user/choice")],
+        [("", None), ("/user/choice", "/user/choice")],
         ids=["empty-uses-the-default-folder", "set-value-wins"],
     )
     def test_names_the_default_folder_unless_the_variable_is_set(
-        self, variable_value: str, expected: str, monkeypatch: pytest.MonkeyPatch
+        self, variable_value: str, expected: str | None, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv(THERMO_CONFIG_DIRECTORY_VARIABLE, variable_value)
         environment_before = dict(os.environ)
 
         process_environment = thermo_helper_environment(None)
 
-        assert process_environment[THERMO_CONFIG_DIRECTORY_VARIABLE] == expected
+        assert process_environment[THERMO_CONFIG_DIRECTORY_VARIABLE] == (expected or str(thermo_config_directory()))
         assert dict(os.environ) == environment_before
 
     @pytest.mark.parametrize(
@@ -290,11 +286,7 @@ class TestThermoHelperEnvironment:
         ],
         ids=["run", "run-cancellable", "execute"],
     )
-    def test_helper_processes_receive_the_config_folder(
-        self, execute: Callable[[Path], str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.delenv(THERMO_CONFIG_DIRECTORY_VARIABLE, raising=False)
-
+    def test_helper_processes_receive_the_config_folder(self, execute: Callable[[Path], str], tmp_path: Path) -> None:
         assert execute(tmp_path).strip() == str(tmp_path)
 
 
