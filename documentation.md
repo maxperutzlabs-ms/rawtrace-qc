@@ -134,10 +134,10 @@ Expected failures derive from `RawtraceError` in `errors.py`. Clients catch this
 
 - `ConfigurationError` for invalid options.
 - `DiscoveryError` for a source that discovery cannot traverse.
-- `ExtractionError` for a problem with one acquisition. Its `path` attribute names that acquisition.
+- `ExtractionError` for a problem with one acquisition. Its `path` attribute names that acquisition. Both extractors raise its subclasses where they fit: `AcquisitionAccessError` (the acquisition cannot be opened, for example because it is locked), `AcquisitionReadError` (not readable in its vendor format), `NoScansError` (none of the requested MS levels has scans), and `TraceWriteError` (the trace files cannot be written).
 - `ArtifactValidationError` for a contract violation.
 - `ProcessingError` and `ReportError` for invalid input to those stages.
-- `ThermoHelperError` and its subclasses for a problem with the machine rather than the file.
+- `ThermoHelperError` and its subclasses for a problem with the helper rather than the file. `is_thermo_setup_error()` tells setup problems, which setting up the helper fixes, from per-file failures such as a `ThermoHelperCommandError`. The CLI and the GUI use it to report a Thermo file as "helper not ready" or as failed.
 - `OperationCancelledError` for a cancellation by the caller.
 
 Git commits use the Conventional Commits format with a scope where it helps, such as `fix(gui): ...` or `feat(thermo): ...`. Write the summary as an imperative sentence.
@@ -176,7 +176,7 @@ All extractors share this behavior:
 
 - The output names are `<name>.ms1-trace.parquet` and `<name>.msn-trace.parquet`, where `<name>` keeps the `.raw` or `.d` suffix by default.
 - Both levels are selected by default, and an unavailable level is then left out.
-- If you select one level and the acquisition does not have it, the extractor raises `ExtractionError`.
+- If you select one level and the acquisition does not have it, or the acquisition has no scans at all, the extractor raises `NoScansError`.
 - If you select no level, the extractor checks the input and writes nothing.
 - Precision `low` writes float32 trace values, and `high` writes float64.
 - An existing output with the same name is overwritten.
@@ -264,21 +264,21 @@ The helper is the only authority on the license state:
 - `--thermo-license` prints the terms without accepting them.
 - `--agree-to-terms` records acceptance for the current user account, or in the folder that `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR` names. `accept_thermo_license()` returns early if `--license-status` already reports acceptance. Otherwise, it runs this command and confirms the state with `--license-status`.
 
-`ThermoExtractor` keeps exit codes 4 and 5 as setup problems, and it reports other non-zero exit codes and timeouts as `ExtractionError`. Other helper failures, such as an executable that cannot start, stay a `ThermoHelperError`. Branch only on exit codes, never on the helper's stderr. The helper uses these exit codes:
+Branch only on exit codes, never on the helper's stderr. The helper uses these exit codes, and `ThermoExtractor` raises these errors for them:
 
-| Code | Meaning |
-|---|---|
-| 0 | Success. At least one non-empty trace file was written. |
-| 1 | Invalid usage. A call without arguments also exits with 1. |
-| 2 | The input file is missing or not accessible. |
-| 3 | The input is not a readable `.raw` file. |
-| 4 | The license is not accepted. |
-| 5 | The license or config folder cannot be used. |
-| 6 | The output files could not be written. |
-| 7 | Internal error of the helper. |
-| 8 | None of the requested MS levels has scans, so nothing was written. |
+| Code | Meaning | `ThermoExtractor` raises |
+|---|---|---|
+| 0 | Success. At least one non-empty trace file was written. | Nothing |
+| 1 | Invalid usage. A call without arguments also exits with 1. | `ThermoHelperCommandError` (a bug in rawtrace-qc) |
+| 2 | The input file is missing or not accessible. | `AcquisitionAccessError` |
+| 3 | The input is not a readable `.raw` file. | `AcquisitionReadError` |
+| 4 | The license is not accepted. | `ThermoHelperLicenseError` |
+| 5 | The license or config folder cannot be used. | `ThermoHelperConfigError` |
+| 6 | The output files could not be written. | `TraceWriteError` |
+| 7 | Internal error of the helper. | `ThermoHelperCommandError` |
+| 8 | None of the requested MS levels has scans, so nothing was written. | `NoScansError` |
 
-Any other code means a crash or a newer helper. On POSIX, a negative code is a signal.
+Any other code means a crash or a newer helper, and `ThermoExtractor` raises `ThermoHelperCommandError`. On POSIX, a negative code is a signal. Exit code 0 without any requested trace file raises `ThermoHelperExecutionError`, because it is a helper bug. A timeout raises `ExtractionError`, and an `OSError` while rawtrace-qc creates or fills the output folder raises `TraceWriteError`.
 
 ## CLI
 

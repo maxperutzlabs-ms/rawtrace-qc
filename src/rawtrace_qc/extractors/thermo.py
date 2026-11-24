@@ -8,13 +8,21 @@ from pathlib import Path
 
 from rawtrace_qc.errors import (
     ArtifactValidationError,
+    ExtractionError,
+    RawtraceError,
     ThermoHelperCommandError,
+    ThermoHelperConfigError,
+    ThermoHelperExecutionError,
+    ThermoHelperLicenseError,
     ThermoHelperTimeoutError,
 )
 from rawtrace_qc.extractors.common import (
+    access_error,
     missing_level_error,
+    no_scans_error,
     read_error,
     validate_extraction_options,
+    write_error,
 )
 from rawtrace_qc.extractors.protocol import PrecisionMode
 from rawtrace_qc.models import ExtractionResult
@@ -22,8 +30,6 @@ from rawtrace_qc.thermo.locator import locate_thermo_helper
 from rawtrace_qc.thermo.runner import build_thermo_helper_command, run_thermo_helper
 from rawtrace_qc.thermo.specification import ThermoHelperSpecification
 from rawtrace_qc.traces import load_trace
-
-_HELPER_SETUP_EXIT_CODES = (4, 5)
 
 
 class ThermoExtractor:
@@ -100,16 +106,22 @@ class ThermoExtractor:
 
         Raises:
             ValueError: If an option, filename, or input path format is invalid.
-            ValueError: If an argument or input file path is invalid.
             UnsupportedPlatformError: If the current runtime has no pinned helper
                 release.
             ThermoHelperNotFoundError: If the helper executable cannot be located.
             ThermoHelperVersionError: If the helper version does not match.
             ThermoHelperLicenseError: If the helper license is not accepted.
-            ThermoHelperExecutionError: If the helper cannot be run or reports a
-                license failure.
-            ExtractionError: If the file cannot be read, reading times out, or a
-                single-level selection has no scans of that level.
+            ThermoHelperConfigError: If the helper cannot use its license folder.
+            ThermoHelperCommandError: If the helper reports invalid usage or an
+                internal error, or stops with an unknown exit code.
+            ThermoHelperExecutionError: If the helper cannot be run, or reports
+                success without writing a trace file.
+            AcquisitionAccessError: If the helper cannot open the file.
+            AcquisitionReadError: If the file is not a readable Thermo RAW file.
+            NoScansError: If none of the selected MS levels has scans.
+            TraceWriteError: If the trace files cannot be written to the output
+                directory.
+            ExtractionError: If reading times out.
             ArtifactValidationError: If the produced trace files fail validation.
             OperationCancelledError: If the `cancel` event was set while extracting.
         """
@@ -143,11 +155,17 @@ class ThermoExtractor:
         final_msn_path: Path | None = None
 
         try:
-            destination_directory.mkdir(parents=True, exist_ok=True)
-            with tempfile.TemporaryDirectory(
-                dir=destination_directory,
-                prefix=".rawtrace-qc-thermo-",
-            ) as temp_dir:
+            try:
+                destination_directory.mkdir(parents=True, exist_ok=True)
+                staging_directory = tempfile.TemporaryDirectory(
+                    dir=destination_directory,
+                    prefix=".rawtrace-qc-thermo-",
+                )
+            except OSError as error:
+                raise write_error(
+                    resolved_input, destination_directory, str(error)
+                ) from error
+            with staging_directory as temp_dir:
                 temp_output_dir = Path(temp_dir)
                 command = build_thermo_helper_command(
                     executable,
@@ -159,22 +177,22 @@ class ThermoExtractor:
                     select_msn=select_msn,
                 )
                 try:
-                    run_thermo_helper(
+                    completed = run_thermo_helper(
                         command, timeout=self._timeout, cancel=self._cancel
                     )
                 except ThermoHelperCommandError as error:
-                    if error.returncode in _HELPER_SETUP_EXIT_CODES:
-                        raise
-                    level = "MS1" if select_ms1 else "MSn"
-                    if select_ms1 != select_msn and _reports_missing_level(
-                        error, level
-                    ):
-                        raise missing_level_error(resolved_input, level) from error
-                    raise read_error(resolved_input, _helper_reason(error)) from error
-                except ThermoHelperTimeoutError as error:
-                    raise read_error(
+                    raise _exit_code_error(
+                        error,
                         resolved_input,
-                        f"Reading timed out after {self._timeout} seconds.",
+                        destination_directory,
+                        select_ms1=select_ms1,
+                        select_msn=select_msn,
+                    ) from error
+                except ThermoHelperTimeoutError as error:
+                    raise ExtractionError(
+                        f"Reading acquisition {resolved_input.name!r} timed out "
+                        f"after {self._timeout} seconds.",
+                        path=resolved_input,
                     ) from error
 
                 staged_ms1 = temp_output_dir / f"{file_stem}.ms1-trace.parquet"
@@ -183,7 +201,13 @@ class ThermoExtractor:
                 has_ms1 = select_ms1 and staged_ms1.is_file()
                 has_msn = select_msn and staged_msn.is_file()
                 if not has_ms1 and not has_msn:
-                    raise read_error(resolved_input, "The helper wrote no trace files.")
+                    raise ThermoHelperExecutionError(
+                        "The Thermo tool reported success for "
+                        f"{resolved_input.name!r} but wrote no trace files. This "
+                        "is a bug in the Thermo tool; please report it.",
+                        stdout=completed.stdout,
+                        stderr=completed.stderr,
+                    )
 
                 if has_ms1:
                     _validate_thermo_trace(
@@ -211,12 +235,16 @@ class ThermoExtractor:
                         final_msn_path = destination_directory / staged_msn.name
                         staged_msn.replace(final_msn_path)
                         published_files.append(final_msn_path)
-                except BaseException:
+                except BaseException as error:
                     for published_file in published_files:
                         try:
                             published_file.unlink(missing_ok=True)
                         except OSError:
                             pass
+                    if isinstance(error, OSError):
+                        raise write_error(
+                            resolved_input, destination_directory, str(error)
+                        ) from error
                     raise
         except BaseException:
             if not destination_existed:
@@ -263,13 +291,63 @@ def _validate_thermo_trace(
         )
 
 
+def _exit_code_error(
+    error: ThermoHelperCommandError,
+    path: Path,
+    output_directory: Path,
+    *,
+    select_ms1: bool,
+    select_msn: bool,
+) -> RawtraceError:
+    code = error.returncode
+    detail = _helper_reason(error)
+    if code == 2:
+        return access_error(path, detail)
+    if code == 3:
+        return read_error(path, detail)
+    if code == 8:
+        if select_ms1 and select_msn:
+            return no_scans_error(path)
+        return missing_level_error(path, "MS1" if select_ms1 else "MSn")
+    if code == 6:
+        return write_error(path, output_directory, detail)
+    if code == 4:
+        return ThermoHelperLicenseError(
+            "The Thermo license has not been accepted, so the Thermo tool did not "
+            f"read {path.name!r}."
+        )
+    if code == 5:
+        return ThermoHelperConfigError(
+            "The Thermo tool could not use its license folder. Check that the "
+            "folder is writable, or THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR if you "
+            f"set it. Details: {detail}"
+        )
+    if code == 1:
+        message = (
+            f"rawtrace-qc called the Thermo tool incorrectly for {path.name!r}. "
+            "This is a bug in rawtrace-qc; please report it."
+        )
+    elif code == 7:
+        message = (
+            f"The Thermo tool had an internal error while reading {path.name!r}. "
+            "Please report it."
+        )
+    else:
+        message = (
+            f"The Thermo tool stopped unexpectedly while reading {path.name!r} "
+            f"(exit code {code})."
+        )
+    return ThermoHelperCommandError(
+        f"{message} Details: {detail}",
+        returncode=code,
+        stdout=error.stdout,
+        stderr=error.stderr,
+    )
+
+
 def _helper_reason(error: ThermoHelperCommandError) -> str:
     for output in (error.stderr, error.stdout):
         lines = [line.strip() for line in output.splitlines() if line.strip()]
         if lines:
             return lines[-1].removeprefix("ERROR: ")
-    return f"The helper exited with status {error.returncode}."
-
-
-def _reports_missing_level(error: ThermoHelperCommandError, level: str) -> bool:
-    return f"contains no {level} scans" in f"{error.stdout}\n{error.stderr}"
+    return f"The Thermo tool exited with code {error.returncode}."

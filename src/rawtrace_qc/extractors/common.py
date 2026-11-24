@@ -4,11 +4,34 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from rawtrace_qc.errors import ExtractionError
+from rawtrace_qc.errors import (
+    AcquisitionAccessError,
+    AcquisitionReadError,
+    NoScansError,
+    TraceWriteError,
+)
 
 
-def read_error(path: Path, detail: str) -> ExtractionError:
-    """Create the shared error for an acquisition that cannot be read.
+def access_error(path: Path, detail: str) -> AcquisitionAccessError:
+    """Create the shared error for an acquisition that cannot be opened.
+
+    Args:
+        path: Acquisition file or folder that could not be opened.
+        detail: Reason reported by the operating system or the reader.
+
+    Returns:
+        An error naming the acquisition and the reason.
+    """
+    return AcquisitionAccessError(
+        f"Could not open acquisition {path.name!r}. It may be locked by the "
+        "acquisition software, moved, or not readable for your user. "
+        f"Details: {detail}",
+        path=path,
+    )
+
+
+def read_error(path: Path, detail: str) -> AcquisitionReadError:
+    """Create the shared error for an acquisition that is not readable.
 
     Args:
         path: Acquisition file or folder that could not be read.
@@ -17,14 +40,14 @@ def read_error(path: Path, detail: str) -> ExtractionError:
     Returns:
         An error naming the acquisition and the reader's reason.
     """
-    return ExtractionError(
-        f"Could not read acquisition {path.name!r}; it may be corrupt, incomplete, "
-        f"locked or inaccessible. Details: {detail}",
+    return AcquisitionReadError(
+        f"Could not read acquisition {path.name!r}; it may be corrupt or "
+        f"incomplete. Details: {detail}",
         path=path,
     )
 
 
-def missing_level_error(path: Path, level: str) -> ExtractionError:
+def missing_level_error(path: Path, level: str) -> NoScansError:
     """Create the shared error for a selected MS level that does not exist.
 
     Args:
@@ -34,9 +57,42 @@ def missing_level_error(path: Path, level: str) -> ExtractionError:
     Returns:
         An error naming the acquisition and the missing level.
     """
-    return ExtractionError(
+    return NoScansError(
         f"Acquisition {path.name!r} contains no {level} data. Select another MS "
         "level or all levels.",
+        path=path,
+    )
+
+
+def no_scans_error(path: Path) -> NoScansError:
+    """Create the shared error for an acquisition without any scans.
+
+    Args:
+        path: Acquisition file or folder that was read.
+
+    Returns:
+        An error naming the acquisition.
+    """
+    return NoScansError(
+        f"Acquisition {path.name!r} contains no MS1 or MSn scans.", path=path
+    )
+
+
+def write_error(path: Path, output_directory: Path, detail: str) -> TraceWriteError:
+    """Create the shared error for traces that cannot be written.
+
+    Args:
+        path: Acquisition file or folder whose traces could not be written.
+        output_directory: Folder that the traces were written to.
+        detail: Reason reported by the operating system or the writer.
+
+    Returns:
+        An error naming the acquisition, the folder and the reason.
+    """
+    return TraceWriteError(
+        f"Could not write the traces of {path.name!r} to the folder "
+        f"'{output_directory}'. Check that the folder is writable and has "
+        f"free space. Details: {detail}",
         path=path,
     )
 

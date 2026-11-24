@@ -14,9 +14,12 @@ import numpy as np
 import pyarrow as pa
 
 from rawtrace_qc.extractors.common import (
+    access_error,
     missing_level_error,
+    no_scans_error,
     read_error,
     validate_extraction_options,
+    write_error,
 )
 from rawtrace_qc.models import ExtractionResult
 from rawtrace_qc.traces import write_trace
@@ -87,9 +90,14 @@ class BrukerExtractor:
 
         Raises:
             ValueError: If an argument or input path is invalid.
-            ExtractionError: If `analysis.tdf` cannot be read, contains no frames
-                or invalid frame data, or a single-level selection has no frames
-                of that level.
+            AcquisitionAccessError: If `analysis.tdf` is missing or cannot be
+                opened.
+            AcquisitionReadError: If `analysis.tdf` is not a readable SQLite
+                database or contains invalid frame data.
+            NoScansError: If `Frames` has no rows, or a single-level selection
+                has no frames of that level.
+            TraceWriteError: If the trace files cannot be written to the output
+                directory.
         """
         resolved_input = validate_extraction_options(
             input_path,
@@ -100,21 +108,22 @@ class BrukerExtractor:
             expect_dir=True,
         )
         tdf_path = resolved_input / "analysis.tdf"
-        if not tdf_path.is_file():
-            raise read_error(resolved_input, "analysis.tdf was not found.")
+        try:
+            with tdf_path.open("rb"):
+                pass
+        except OSError as error:
+            raise access_error(resolved_input, str(error)) from error
 
         try:
             acquisition_start_time = self._read_acquisition_start_time(tdf_path)
             source_id = self._read_analysis_id(tdf_path)
             frames = self._read_frames(tdf_path)
-            if not frames.scan_id.size:
-                raise RuntimeError("Frames contains no rows.")
-            summary = self._build_summary(
-                frames,
-                self._read_dia_ms2_ids(tdf_path),
-            )
+            dia_ms2_ids = self._read_dia_ms2_ids(tdf_path)
         except (sqlite3.Error, RuntimeError, ValueError, TypeError) as error:
             raise read_error(resolved_input, str(error)) from error
+        if not frames.scan_id.size:
+            raise no_scans_error(resolved_input)
+        summary = self._build_summary(frames, dia_ms2_ids)
         if not select_ms1 and not select_msn:
             return ExtractionResult()
 
@@ -131,38 +140,43 @@ class BrukerExtractor:
             if output_directory is None
             else output_directory.expanduser().resolve()
         )
-        destination_directory.mkdir(parents=True, exist_ok=True)
         file_stem = output_name or resolved_input.name
         extracted_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         ms1_path = None
         msn_path = None
 
-        if select_ms1 and len(ms1_indices):
-            ms1_path = self._write_level(
-                summary,
-                ms1_indices,
-                destination_directory / f"{file_stem}.ms1-trace.parquet",
-                "ms1",
-                precision_mode,
-                "spectrum",
-                resolved_input.name,
-                extracted_at,
-                acquisition_start_time,
-                source_id,
-            )
-        if select_msn and len(msn_indices):
-            msn_path = self._write_level(
-                summary,
-                msn_indices,
-                destination_directory / f"{file_stem}.msn-trace.parquet",
-                "msn",
-                precision_mode,
-                "frame-aggregate",
-                resolved_input.name,
-                extracted_at,
-                acquisition_start_time,
-                source_id,
-            )
+        try:
+            destination_directory.mkdir(parents=True, exist_ok=True)
+            if select_ms1 and len(ms1_indices):
+                ms1_path = self._write_level(
+                    summary,
+                    ms1_indices,
+                    destination_directory / f"{file_stem}.ms1-trace.parquet",
+                    "ms1",
+                    precision_mode,
+                    "spectrum",
+                    resolved_input.name,
+                    extracted_at,
+                    acquisition_start_time,
+                    source_id,
+                )
+            if select_msn and len(msn_indices):
+                msn_path = self._write_level(
+                    summary,
+                    msn_indices,
+                    destination_directory / f"{file_stem}.msn-trace.parquet",
+                    "msn",
+                    precision_mode,
+                    "frame-aggregate",
+                    resolved_input.name,
+                    extracted_at,
+                    acquisition_start_time,
+                    source_id,
+                )
+        except OSError as error:
+            raise write_error(
+                resolved_input, destination_directory, str(error)
+            ) from error
 
         return ExtractionResult(ms1_path=ms1_path, msn_path=msn_path)
 

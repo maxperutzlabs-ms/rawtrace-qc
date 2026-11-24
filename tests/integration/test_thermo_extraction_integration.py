@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 
 import pyarrow as pa
 import pytest
+from rawtrace_qc.errors import AcquisitionAccessError, AcquisitionReadError
 from rawtrace_qc.extractors import ThermoExtractor
 from rawtrace_qc.traces import load_trace
 
@@ -98,3 +101,29 @@ class TestThermoExtractionIntegration:
         assert ms1.table.schema.field("retention_time_sec").type == pa.float64()
         assert ms1.table.schema.field("total_ion_current").type == pa.float64()
         assert ms1.table.schema.field("base_peak_intensity").type == pa.float64()
+
+    def test_file_that_is_not_a_raw_file_raises_read_error(
+        self, thermo_helper_executable: Path, tmp_path: Path
+    ) -> None:
+        fake_raw = tmp_path / "not-thermo.raw"
+        fake_raw.write_bytes(b"This is a text file with a .raw suffix.\n" * 100)
+
+        with pytest.raises(AcquisitionReadError, match="'not-thermo.raw'"):
+            ThermoExtractor(helper_path=thermo_helper_executable).extract(fake_raw, output_directory=tmp_path / "out")
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX file permissions only")
+    def test_unreadable_raw_file_raises_access_error(
+        self, thermo_helper_executable: Path, thermo_raw_fixture: Path, tmp_path: Path
+    ) -> None:
+        if os.geteuid() == 0:
+            pytest.skip("root can read files without read permission")
+        locked_raw = tmp_path / thermo_raw_fixture.name
+        locked_raw.write_bytes(thermo_raw_fixture.read_bytes())
+        locked_raw.chmod(0)
+        try:
+            with pytest.raises(AcquisitionAccessError):
+                ThermoExtractor(helper_path=thermo_helper_executable).extract(
+                    locked_raw, output_directory=tmp_path / "out"
+                )
+        finally:
+            locked_raw.chmod(0o600)

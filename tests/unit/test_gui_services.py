@@ -17,6 +17,7 @@ from rawtrace_qc.errors import (
     OperationCancelledError,
     ProcessingError,
     ThermoHelperCommandError,
+    ThermoHelperConfigError,
     ThermoHelperExecutableNotFoundError,
     ThermoHelperExecutionError,
     ThermoHelperLicenseError,
@@ -360,9 +361,10 @@ class TestReportGenerationWithBadFiles:
         ("error", "reason"),
         [
             (ThermoHelperLicenseError("no license"), ExclusionReason.THERMO_NOT_READY),
+            (ThermoHelperConfigError("folder"), ExclusionReason.THERMO_NOT_READY),
             (
-                ThermoHelperCommandError("no license", returncode=4, stdout="", stderr=""),
-                ExclusionReason.THERMO_NOT_READY,
+                ThermoHelperCommandError("crashed", returncode=7, stdout="", stderr=""),
+                ExclusionReason.EXTRACTION_FAILED,
             ),
             (ThermoHelperExecutableNotFoundError("gone", stdout="", stderr=""), ExclusionReason.THERMO_NOT_READY),
             (ThermoHelperExecutionError("access denied", stdout="", stderr=""), ExclusionReason.EXTRACTION_FAILED),

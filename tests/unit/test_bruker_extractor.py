@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pyarrow as pa
 import pytest
-from rawtrace_qc.errors import ExtractionError
+from rawtrace_qc.errors import AcquisitionAccessError, AcquisitionReadError, ExtractionError, NoScansError
 from rawtrace_qc.extractors import BrukerExtractor
 from rawtrace_qc.traces import load_trace
 
@@ -136,7 +136,7 @@ class TestBrukerExtractor:
             connection.execute("DELETE FROM Frames")
             connection.commit()
 
-        with pytest.raises(ExtractionError, match="no rows"):
+        with pytest.raises(NoScansError, match="no MS1 or MSn scans"):
             BrukerExtractor().extract(bruker_fixture, output_directory=tmp_path / "empty")
 
     def test_high_precision_writes_float64_trace_columns(self, bruker_fixture: Path, tmp_path: Path) -> None:
@@ -178,7 +178,13 @@ class TestBrukerExtractor:
     def test_corrupt_database_is_reported_with_the_acquisition_name(self, bruker_fixture: Path, tmp_path: Path) -> None:
         (bruker_fixture / "analysis.tdf").write_bytes(b"not a database, just some corrupt bytes" * 50)
 
-        with pytest.raises(ExtractionError, match="Could not read acquisition 'sample.d'.*not a database") as error:
+        with pytest.raises(AcquisitionReadError, match="'sample.d'.*not a database") as error:
             BrukerExtractor().extract(bruker_fixture, output_directory=tmp_path / "corrupt")
 
         assert error.value.path == bruker_fixture
+
+    def test_missing_analysis_tdf_is_an_access_error(self, bruker_fixture: Path, tmp_path: Path) -> None:
+        (bruker_fixture / "analysis.tdf").unlink()
+
+        with pytest.raises(AcquisitionAccessError, match="'sample.d'"):
+            BrukerExtractor().extract(bruker_fixture, output_directory=tmp_path / "missing")

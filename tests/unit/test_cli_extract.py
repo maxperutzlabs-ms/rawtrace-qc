@@ -190,7 +190,7 @@ class TestExtractCommand:
             )
             for name in ("a.raw", "b.raw")
         )
-        command_error = ThermoHelperCommandError("Helper exited with 4.", returncode=4, stdout="", stderr="")
+        command_error = ThermoHelperCommandError("Helper exited with 7.", returncode=7, stdout="", stderr="")
         failed = BatchExtractionOutcome(
             DiscoveryCandidate(tmp_path / "c.raw", Vendor.THERMO, "raw"),
             ExtractionOutcomeStatus.FAILED,
@@ -203,11 +203,12 @@ class TestExtractCommand:
 
         output = capsys.readouterr().out
         assert result == 1
-        assert output.count("Thermo helper is not ready.") == 3
+        assert output.count("Thermo helper is not ready.") == 2
         assert output.count("Thermo helper is not installed.") == 1
         assert output.count("rawtrace-qc thermo install`") == 1
-        assert output.count("Helper exited with 4.") == 1
-        assert output.count("rawtrace-qc thermo status") == 1
+        assert output.count("Helper exited with 7.") == 1
+        assert output.index("Helper exited with 7.") < output.index("Thermo setup:")
+        assert "rawtrace-qc thermo status" not in output
         assert output.index("Thermo setup:") > output.index(str(tmp_path / "c.raw"))
 
     def test_discovery_issues_are_reported_and_fail_the_command(self, tmp_path: Path, monkeypatch, capsys) -> None:

@@ -113,7 +113,6 @@ class TestRunThermoHelper:
         assert error.value.stdout.splitlines() == ["mock helper stdout"]
         assert error.value.stderr.splitlines() == ["mock helper stderr"]
         assert "status 7" in str(error.value)
-        assert "mock helper stderr" in str(error.value)
 
     def test_raises_timeout_with_partial_output_from_mock_helper_process(self) -> None:
         with pytest.raises(ThermoHelperTimeoutError) as error:

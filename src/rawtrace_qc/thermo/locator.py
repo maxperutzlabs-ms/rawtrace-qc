@@ -13,6 +13,7 @@ from rawtrace_qc.errors import (
     ThermoHelperCommandError,
     ThermoHelperConfigError,
     ThermoHelperError,
+    ThermoHelperExecutableNotFoundError,
     ThermoHelperExecutionError,
     ThermoHelperLicenseError,
     ThermoHelperNotFoundError,
@@ -31,6 +32,14 @@ _LICENSE_ACCEPTED_EXIT_CODE = 0
 _LICENSE_NOT_ACCEPTED_EXIT_CODE = 4
 _LICENSE_CONFIG_ERROR_EXIT_CODE = 5
 _CONFIG_DIRECTORY_VARIABLE = "THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR"
+_SETUP_ERRORS = (
+    ThermoHelperNotFoundError,
+    ThermoHelperVersionError,
+    ThermoHelperLicenseError,
+    ThermoHelperConfigError,
+    UnsupportedPlatformError,
+    ThermoHelperExecutableNotFoundError,
+)
 
 
 class ThermoHelperState(StrEnum):
@@ -143,6 +152,23 @@ def locate_thermo_helper(
         raise ThermoHelperNotFoundError(status.message)
 
     return status.path
+
+
+def is_thermo_setup_error(error: BaseException) -> bool:
+    """Check whether an error means that the Thermo helper is not ready.
+
+    Setting up the helper fixes these errors: it is missing, has the wrong
+    version, cannot be started, its license is not accepted or its license
+    folder is unusable, or the system is not supported. Other errors, such as
+    a `ThermoHelperCommandError` from extraction, concern one file.
+
+    Args:
+        error: Error raised while locating the helper or extracting a file.
+
+    Returns:
+        True if `error` is a setup problem of the helper.
+    """
+    return isinstance(error, _SETUP_ERRORS)
 
 
 def get_thermo_helper_status(
@@ -539,9 +565,11 @@ def query_license_status(
         _LICENSE_ACCEPTED_EXIT_CODE,
         _LICENSE_NOT_ACCEPTED_EXIT_CODE,
     ):
+        stderr_sample = result.stderr.strip()
+        detail = f" Helper message: {stderr_sample}" if stderr_sample else ""
         raise ThermoHelperCommandError(
             f"ThermoScanHeaderExtractor at {executable_path} exited with "
-            f"unexpected code {result.returncode} {action}.",
+            f"unexpected code {result.returncode} {action}.{detail}",
             returncode=result.returncode,
             stdout=result.stdout,
             stderr=result.stderr,

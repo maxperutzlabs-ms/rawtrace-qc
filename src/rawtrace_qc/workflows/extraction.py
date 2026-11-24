@@ -17,24 +17,12 @@ from rawtrace_qc.discovery import (
     Vendor,
     discover_inputs,
 )
-from rawtrace_qc.errors import (
-    ConfigurationError,
-    ThermoHelperConfigError,
-    ThermoHelperError,
-    ThermoHelperLicenseError,
-    ThermoHelperNotFoundError,
-    ThermoHelperVersionError,
-    UnsupportedPlatformError,
-)
+from rawtrace_qc.errors import ConfigurationError
 from rawtrace_qc.extractors.bruker import BrukerExtractor
 from rawtrace_qc.extractors.protocol import Extractor, PrecisionMode
 from rawtrace_qc.extractors.thermo import ThermoExtractor
 from rawtrace_qc.models import ExtractionResult
-from rawtrace_qc.thermo.locator import (
-    ThermoHelperState,
-    ThermoHelperStatus,
-    get_thermo_helper_status,
-)
+from rawtrace_qc.thermo.locator import locate_thermo_helper
 
 
 class ExtractionOutcomeStatus(StrEnum):
@@ -207,25 +195,7 @@ def _get_extractor(
 
 def _thermo_helper_error() -> Exception | None:
     try:
-        status = get_thermo_helper_status()
+        locate_thermo_helper()
     except Exception as error:
         return error
-    if status.is_ready:
-        return None
-    return _status_error(status)
-
-
-def _status_error(status: ThermoHelperStatus) -> ThermoHelperError:
-    if (
-        status.state is ThermoHelperState.UNLICENSED
-        and status.license_marker_path is None
-    ):
-        return ThermoHelperConfigError(status.message)
-    error_types: dict[ThermoHelperState, type[ThermoHelperError]] = {
-        ThermoHelperState.NOT_INSTALLED: ThermoHelperNotFoundError,
-        ThermoHelperState.UNLICENSED: ThermoHelperLicenseError,
-        ThermoHelperState.INVALID_VERSION: ThermoHelperVersionError,
-        ThermoHelperState.UNSUPPORTED_PLATFORM: UnsupportedPlatformError,
-    }
-    error_type = error_types.get(status.state, ThermoHelperError)
-    return error_type(status.message)
+    return None

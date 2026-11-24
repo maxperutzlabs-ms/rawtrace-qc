@@ -5,16 +5,9 @@ from pathlib import Path
 
 import pytest
 from rawtrace_qc.discovery import DiscoveryIssue, DiscoveryOptions, SkipReason, Vendor
-from rawtrace_qc.errors import (
-    ConfigurationError,
-    ThermoHelperConfigError,
-    ThermoHelperError,
-    ThermoHelperLicenseError,
-    ThermoHelperNotFoundError,
-)
+from rawtrace_qc.errors import ConfigurationError, ThermoHelperNotFoundError
 from rawtrace_qc.extractors import BrukerExtractor, ThermoExtractor
 from rawtrace_qc.models import ExtractionResult
-from rawtrace_qc.thermo import ThermoHelperState, ThermoHelperStatus
 from rawtrace_qc.workflows import (
     BatchExtractionResult,
     ExtractionOutcomeStatus,
@@ -72,24 +65,8 @@ class RecordingExtractor:
         return ExtractionResult()
 
 
-def _ready_helper_status() -> ThermoHelperStatus:
-    return ThermoHelperStatus(
-        state=ThermoHelperState.READY,
-        path=Path("ThermoScanHeaderExtractor.exe"),
-        version="0.1.0",
-        license_accepted=True,
-        message="Helper is ready.",
-    )
-
-
-def _not_installed_status() -> ThermoHelperStatus:
-    return ThermoHelperStatus(
-        state=ThermoHelperState.NOT_INSTALLED,
-        path=None,
-        version=None,
-        license_accepted=False,
-        message="ThermoScanHeaderExtractor is not installed.",
-    )
+def _ready_helper() -> Path:
+    return Path("ThermoScanHeaderExtractor.exe")
 
 
 class TestExtractBatch:
@@ -97,7 +74,7 @@ class TestExtractBatch:
         raw_file = _create_raw(tmp_path / "sample.raw")
         thermo = RecordingExtractor()
         monkeypatch.setattr(workflow_module, "ThermoExtractor", lambda **_: thermo)
-        monkeypatch.setattr(workflow_module, "get_thermo_helper_status", _ready_helper_status)
+        monkeypatch.setattr(workflow_module, "locate_thermo_helper", _ready_helper)
 
         result = extract_batch([raw_file], discovery_options=_discovery_options())
 
@@ -111,7 +88,7 @@ class TestExtractBatch:
         raw_file = _create_raw(tmp_path / "sample.raw")
         thermo = RecordingExtractor()
         monkeypatch.setattr(workflow_module, "ThermoExtractor", lambda **_: thermo)
-        monkeypatch.setattr(workflow_module, "get_thermo_helper_status", _ready_helper_status)
+        monkeypatch.setattr(workflow_module, "locate_thermo_helper", _ready_helper)
 
         result = extract_batch([tmp_path / "*.raw"], discovery_options=_discovery_options())
 
@@ -127,7 +104,7 @@ class TestExtractBatch:
         nested_raw = _create_raw(source / "nested" / "sample.raw")
         thermo = RecordingExtractor()
         monkeypatch.setattr(workflow_module, "ThermoExtractor", lambda **_: thermo)
-        monkeypatch.setattr(workflow_module, "get_thermo_helper_status", _ready_helper_status)
+        monkeypatch.setattr(workflow_module, "locate_thermo_helper", _ready_helper)
 
         result = extract_batch([source], recursive=recursive, discovery_options=_discovery_options())
 
@@ -146,7 +123,7 @@ class TestExtractBatch:
         bruker = RecordingExtractor()
         monkeypatch.setattr(workflow_module, "ThermoExtractor", lambda **_: thermo)
         monkeypatch.setattr(workflow_module, "BrukerExtractor", lambda: bruker)
-        monkeypatch.setattr(workflow_module, "get_thermo_helper_status", _ready_helper_status)
+        monkeypatch.setattr(workflow_module, "locate_thermo_helper", _ready_helper)
 
         result = extract_batch([raw_file, tmp_path], discovery_options=_discovery_options())
 
@@ -165,54 +142,28 @@ class TestExtractBatch:
         bruker_directory = _create_bruker(tmp_path / "run.d")
         thermo = RecordingExtractor()
         bruker = RecordingExtractor()
-        status_calls = 0
+        locate_calls = 0
 
-        def helper_status() -> ThermoHelperStatus:
-            nonlocal status_calls
-            status_calls += 1
-            return _not_installed_status()
+        def missing_helper() -> Path:
+            nonlocal locate_calls
+            locate_calls += 1
+            raise ThermoHelperNotFoundError("ThermoScanHeaderExtractor is not installed.")
 
         monkeypatch.setattr(workflow_module, "ThermoExtractor", lambda **_: thermo)
         monkeypatch.setattr(workflow_module, "BrukerExtractor", lambda: bruker)
-        monkeypatch.setattr(workflow_module, "get_thermo_helper_status", helper_status)
+        monkeypatch.setattr(workflow_module, "locate_thermo_helper", missing_helper)
 
         result = extract_batch([raw_file, bruker_directory], discovery_options=_discovery_options())
 
         thermo_outcome = result.outcomes[0]
         assert result.exit_code == 1
-        assert status_calls == 1
+        assert locate_calls == 1
         assert thermo_outcome.status is ExtractionOutcomeStatus.SKIPPED
         assert isinstance(thermo_outcome.error, ThermoHelperNotFoundError)
         assert "not installed" in thermo_outcome.reason
         assert result.outcomes[1].status is ExtractionOutcomeStatus.SUCCEEDED
         assert thermo.calls == []
         assert len(bruker.calls) == 1
-
-    @pytest.mark.parametrize(
-        ("marker_path", "error_type"),
-        [(Path("config/.thermo-license-accepted"), ThermoHelperLicenseError), (None, ThermoHelperConfigError)],
-    )
-    def test_unlicensed_helper_error_depends_on_the_marker_path(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-        marker_path: Path | None,
-        error_type: type[ThermoHelperError],
-    ) -> None:
-        raw_file = _create_raw(tmp_path / "sample.raw")
-        status = ThermoHelperStatus(
-            state=ThermoHelperState.UNLICENSED,
-            path=Path("ThermoScanHeaderExtractor.exe"),
-            version="0.1.0",
-            license_accepted=False,
-            message="Helper is not licensed.",
-            license_marker_path=marker_path,
-        )
-        monkeypatch.setattr(workflow_module, "get_thermo_helper_status", lambda: status)
-
-        result = extract_batch([raw_file], discovery_options=_discovery_options())
-
-        assert type(result.outcomes[0].error) is error_type
 
     def test_failed_candidate_does_not_abort_later_candidates(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -221,7 +172,7 @@ class TestExtractBatch:
         second_raw = _create_raw(tmp_path / "second.raw")
         thermo = RecordingExtractor({first_raw: RuntimeError("mock extraction failure")})
         monkeypatch.setattr(workflow_module, "ThermoExtractor", lambda **_: thermo)
-        monkeypatch.setattr(workflow_module, "get_thermo_helper_status", _ready_helper_status)
+        monkeypatch.setattr(workflow_module, "locate_thermo_helper", _ready_helper)
 
         result = extract_batch([first_raw, second_raw], discovery_options=_discovery_options())
 
@@ -237,7 +188,7 @@ class TestExtractBatch:
         output_directory = tmp_path / "traces"
         thermo = RecordingExtractor()
         monkeypatch.setattr(workflow_module, "ThermoExtractor", lambda **_: thermo)
-        monkeypatch.setattr(workflow_module, "get_thermo_helper_status", _ready_helper_status)
+        monkeypatch.setattr(workflow_module, "locate_thermo_helper", _ready_helper)
 
         extract_batch(
             [raw_file],

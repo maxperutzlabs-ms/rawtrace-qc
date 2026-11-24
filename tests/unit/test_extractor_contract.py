@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from rawtrace_qc.errors import TraceWriteError
 from rawtrace_qc.extractors import BrukerExtractor, ThermoExtractor
 from rawtrace_qc.extractors.protocol import Extractor
 
@@ -56,6 +57,20 @@ class TestExtractorContract:
         assert result.ms1_path is None
         assert result.msn_path is None
         assert not output_directory.exists()
+
+    def test_output_folder_that_cannot_be_created_raises_trace_write_error(
+        self,
+        extractor_and_sample: tuple[Extractor, Path],
+        tmp_path: Path,
+    ) -> None:
+        extractor, input_path = extractor_and_sample
+        blocking_file = tmp_path / "not-a-folder"
+        blocking_file.touch()
+
+        with pytest.raises(TraceWriteError, match="not-a-folder") as error:
+            extractor.extract(input_path, output_directory=blocking_file / "out")
+
+        assert error.value.path == input_path.resolve()
 
     def test_rejects_invalid_precision_mode(
         self,

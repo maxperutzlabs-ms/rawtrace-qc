@@ -14,6 +14,9 @@
 - Loading and writing a trace now rejects files without rows, with a repeated `scan_id`, or with rows that are not sorted by retention time and then by `scan_id`, as the specification requires.
 - Loading and writing a trace now rejects float columns whose bit width the specification does not allow, for example a 64-bit `total_ion_current` in precision mode `low`.
 - Error messages about a column with the wrong type now say which kind of numbers the column must contain.
+- Extraction raises more specific errors: `AcquisitionAccessError` for a raw file that cannot be opened, `AcquisitionReadError` for one that is not readable, `NoScansError` for a raw file without scans of the requested MS levels, and `TraceWriteError` when the trace files cannot be written. They subclass `ExtractionError`. A run without any scans is now reported as such, and a timeout no longer says that the file may be corrupt.
+- **Breaking:** A crash, an internal error or an unknown exit code of the Thermo tool now raises `ThermoHelperCommandError` instead of `ExtractionError`, and exit codes 4 and 5 during extraction raise `ThermoHelperLicenseError` and `ThermoHelperConfigError`. The new `is_thermo_setup_error()` tells setup problems of the Thermo tool from per-file failures.
+- Error messages of the Thermo tool no longer contain its raw output. Only its last message line is shown.
 
 ### Removed
 - **Breaking:** `RUNTIME_FALLBACKS`. Every supported runtime now has its own pinned build, so there is nothing to replace it with.

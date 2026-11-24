@@ -13,7 +13,8 @@ from rawtrace_qc.cli.errors import (
     thermo_setup_hint,
 )
 from rawtrace_qc.discovery import DiscoveryOptions
-from rawtrace_qc.errors import RawtraceError, ThermoHelperError
+from rawtrace_qc.errors import RawtraceError
+from rawtrace_qc.thermo import is_thermo_setup_error
 from rawtrace_qc.workflows import (
     BatchExtractionOutcome,
     BatchExtractionResult,
@@ -139,6 +140,6 @@ def _outcome_details(outcome: BatchExtractionOutcome) -> list[str]:
 
 
 def _is_helper_problem(outcome: BatchExtractionOutcome) -> bool:
-    return outcome.status is ExtractionOutcomeStatus.SKIPPED or isinstance(
-        outcome.error, ThermoHelperError
+    return outcome.status is ExtractionOutcomeStatus.SKIPPED or (
+        outcome.error is not None and is_thermo_setup_error(outcome.error)
     )
