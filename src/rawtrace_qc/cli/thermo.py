@@ -24,21 +24,16 @@ thermo_app = App(name="thermo", help="Manage ThermoScanHeaderExtractor setup.")
 def status(
     *,
     helper_path: Path | None = None,
-    data_directory: Path | None = None,
 ) -> int:
     """Show Thermo helper installation, version, and license status.
 
     Args:
         helper_path: Use this helper executable, or the helper in this folder.
-        data_directory: Use this application data folder instead of the default.
 
     Returns:
         Exit code `0` when the helper is ready, otherwise `1`.
     """
-    helper_status = get_thermo_helper_status(
-        explicit_path=helper_path,
-        data_directory=data_directory,
-    )
+    helper_status = get_thermo_helper_status(explicit_path=helper_path)
     print(f"Thermo helper status: {helper_status.state.value}")
     print(helper_status.message)
     if helper_status.is_ready:
@@ -51,15 +46,12 @@ def status(
 def install(
     *,
     from_zip: Path | None = None,
-    data_directory: Path | None = None,
     overwrite: bool = False,
 ) -> int:
     """Install the pinned helper from its release or a local ZIP archive.
 
     Args:
         from_zip: Install from this local ZIP instead of downloading it.
-        data_directory: Install into this application data folder instead of
-            the default.
         overwrite: Replace whatever is already at the install location.
 
     Returns:
@@ -68,7 +60,6 @@ def install(
     try:
         executable = install_thermo_helper(
             archive_path=from_zip,
-            data_directory=data_directory,
             overwrite=overwrite,
         )
     except ThermoHelperError as error:
@@ -86,7 +77,6 @@ def install(
 def accept_license(
     *,
     helper_path: Path | None = None,
-    data_directory: Path | None = None,
 ) -> int:
     """Display the Thermo terms and explicitly record license acceptance.
 
@@ -95,22 +85,15 @@ def accept_license(
 
     Args:
         helper_path: Use this helper executable, or the helper in this folder.
-        data_directory: Use this application data folder instead of the default.
 
     Returns:
         Exit code `0` when acceptance is recorded, otherwise `1`.
     """
     try:
-        terms = get_thermo_license_text(
-            explicit_path=helper_path,
-            data_directory=data_directory,
-        )
+        terms = get_thermo_license_text(explicit_path=helper_path)
         print("The following Thermo license terms will be accepted by this command:")
         print(terms, end="" if terms.endswith("\n") else "\n")
-        accept_thermo_license(
-            explicit_path=helper_path,
-            data_directory=data_directory,
-        )
+        accept_thermo_license(explicit_path=helper_path)
     except ThermoHelperError as error:
         print_cli_error(error, thermo=True)
         return 1

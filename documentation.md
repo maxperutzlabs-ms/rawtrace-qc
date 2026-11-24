@@ -289,7 +289,7 @@ Any other code means a crash or a newer helper, and `ThermoExtractor` raises `Th
 
 ## CLI
 
-`rawtrace-qc` has the commands `extract` and `thermo` (`status`, `install`, and `accept-license`). Run them with `--help` to see the options. The optional dependency is imported inside `main()`, so a missing Cyclopts gives a clear message with exit code 2.
+`rawtrace-qc` has the commands `extract` and `thermo` (`status`, `install`, and `accept-license`). Run them with `--help` to see the options. All commands find the Thermo tool and its license acceptance in the application data folder of the user account, as the desktop application does. `thermo install` installs the managed helper there. `thermo status` and `thermo accept-license` can use another helper with `--helper-path`, but `extract` always uses the managed helper. The license acceptance is recorded in the data folder also for a helper given with `--helper-path`, unless `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR` is set. The optional dependency is imported inside `main()`, so a missing Cyclopts gives a clear message with exit code 2.
 
 `extract` prints one entry for each acquisition, then any Thermo setup problems and discovery issues, and finally a summary. Its exit code is 1 if any acquisition did not succeed or if discovery reported any issue. The first case includes Thermo acquisitions that were skipped because the helper was not ready. Acquisitions that discovery skipped do not change the exit code unless they leave an input without candidates.
 

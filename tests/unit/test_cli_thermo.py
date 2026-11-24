@@ -8,14 +8,20 @@ from rawtrace_qc.cli import main
 from rawtrace_qc.cli import thermo as thermo_cli_module
 from rawtrace_qc.errors import ThermoHelperChecksumError, ThermoHelperDownloadError, ThermoHelperInstallConflictError
 from rawtrace_qc.thermo import locator as locator_module
-from rawtrace_qc.thermo import managed_thermo_helper_directory
+from rawtrace_qc.thermo import managed_thermo_helper_directory, thermo_config_directory
+from rawtrace_qc.thermo.runner import THERMO_CONFIG_DIRECTORY_VARIABLE
 from tests.support.mock_helper import MockThermoHelper, create_mock_helper_file
 from tests.support.thermo_helper import WIN_X64_SPECIFICATION
 
 
-def _create_helper(data_directory: Path) -> Path:
-    helper_directory = managed_thermo_helper_directory(WIN_X64_SPECIFICATION, data_directory=data_directory)
-    return create_mock_helper_file(helper_directory)
+@pytest.fixture(autouse=True)
+def isolated_data_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("rawtrace_qc.environment.user_data_dir", lambda **_kwargs: str(tmp_path / "appdata"))
+    monkeypatch.delenv(THERMO_CONFIG_DIRECTORY_VARIABLE, raising=False)
+
+
+def _create_helper() -> Path:
+    return create_mock_helper_file(managed_thermo_helper_directory(WIN_X64_SPECIFICATION))
 
 
 class TestThermoStatusCommand:
@@ -37,20 +43,18 @@ class TestThermoStatusCommand:
         platform: str,
         exit_code: int,
         action: str,
-        tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        data_directory = tmp_path / "appdata"
         helper = None
         if version is not None:
-            helper = _create_helper(data_directory)
+            helper = _create_helper()
         mock_helper = MockThermoHelper(version=version or WIN_X64_SPECIFICATION.version, license_accepted=licensed)
         monkeypatch.setattr(environment, "get_platform", lambda: platform)
         monkeypatch.setattr(environment, "get_machine", lambda: "AMD64")
         monkeypatch.setattr(locator_module, "execute_helper_process", mock_helper)
 
-        result = main(["thermo", "status", "--data-directory", str(data_directory)])
+        result = main(["thermo", "status"])
 
         output = capsys.readouterr().out
         assert result == exit_code
@@ -63,15 +67,14 @@ class TestThermoStatusCommand:
             assert [command[1:] for command in mock_helper.commands_run] == expected_commands
 
     def test_status_points_to_the_license_folder_when_the_helper_cannot_use_it(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        data_directory = tmp_path / "appdata"
-        _create_helper(data_directory)
+        _create_helper()
         monkeypatch.setattr(environment, "get_platform", lambda: "win32")
         monkeypatch.setattr(environment, "get_machine", lambda: "AMD64")
         monkeypatch.setattr(locator_module, "execute_helper_process", MockThermoHelper(license_status_exit_code=5))
 
-        result = main(["thermo", "status", "--data-directory", str(data_directory)])
+        result = main(["thermo", "status"])
 
         output = capsys.readouterr().out
         assert result == 1
@@ -81,15 +84,14 @@ class TestThermoStatusCommand:
     def test_status_reports_missing_helper_path_without_using_managed_helper(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        data_directory = tmp_path / "appdata"
-        _create_helper(data_directory)
+        _create_helper()
         mock_helper = MockThermoHelper(license_accepted=True)
         monkeypatch.setattr(environment, "get_platform", lambda: "win32")
         monkeypatch.setattr(environment, "get_machine", lambda: "AMD64")
         monkeypatch.setattr(locator_module, "execute_helper_process", mock_helper)
         helper_path = tmp_path / "does_not_exist"
 
-        result = main(["thermo", "status", "--helper-path", str(helper_path), "--data-directory", str(data_directory)])
+        result = main(["thermo", "status", "--helper-path", str(helper_path)])
 
         output = capsys.readouterr().out
         assert result == 1
@@ -102,24 +104,21 @@ class TestThermoSetupCommands:
     def test_accept_license_reports_missing_helper_path_without_accepting(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        data_directory = tmp_path / "appdata"
-        _create_helper(data_directory)
+        _create_helper()
         mock_helper = MockThermoHelper()
         monkeypatch.setattr(environment, "get_platform", lambda: "win32")
         monkeypatch.setattr(environment, "get_machine", lambda: "AMD64")
         monkeypatch.setattr(locator_module, "execute_helper_process", mock_helper)
         helper_path = tmp_path / "does_not_exist"
 
-        result = main(
-            ["thermo", "accept-license", "--helper-path", str(helper_path), "--data-directory", str(data_directory)]
-        )
+        result = main(["thermo", "accept-license", "--helper-path", str(helper_path)])
 
         assert result == 1
         assert "does_not_exist" in capsys.readouterr().err
         assert mock_helper.commands_run == []
         assert mock_helper.license_accepted is False
 
-    def test_install_passes_offline_archive_and_data_directory_to_library(
+    def test_install_passes_offline_archive_to_library(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
@@ -127,8 +126,7 @@ class TestThermoSetupCommands:
     ) -> None:
         archive_path = tmp_path / "helper.zip"
         archive_path.write_bytes(b"mock archive")
-        data_directory = tmp_path / "shared-tools"
-        executable = data_directory / "ThermoScanHeaderExtractor.exe"
+        executable = tmp_path / "ThermoScanHeaderExtractor.exe"
         calls: dict[str, object] = {}
 
         def fake_install(**kwargs: object) -> Path:
@@ -137,21 +135,11 @@ class TestThermoSetupCommands:
 
         monkeypatch.setattr(thermo_cli_module, "install_thermo_helper", fake_install)
 
-        result = main(
-            [
-                "thermo",
-                "install",
-                "--from-zip",
-                str(archive_path),
-                "--data-directory",
-                str(data_directory),
-            ]
-        )
+        result = main(["thermo", "install", "--from-zip", str(archive_path)])
 
         output = capsys.readouterr().out
         assert result == 0
         assert calls["archive_path"] == archive_path
-        assert calls["data_directory"] == data_directory
         assert calls["overwrite"] is False
         assert str(executable) in output
         assert "thermo accept-license" in output
@@ -218,20 +206,18 @@ class TestThermoSetupCommands:
         assert "Failed to reach download server." in captured.err
         assert "Check setup with `rawtrace-qc thermo status`." in captured.err
 
-    def test_accept_license_displays_terms_and_records_explicit_acceptance(
+    def test_accept_license_displays_terms_and_records_acceptance_in_the_default_data_folder(
         self,
-        tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        data_directory = tmp_path / "appdata"
-        _create_helper(data_directory)
+        _create_helper()
         mock_helper = MockThermoHelper()
         monkeypatch.setattr(environment, "get_platform", lambda: "win32")
         monkeypatch.setattr(environment, "get_machine", lambda: "AMD64")
         monkeypatch.setattr(locator_module, "execute_helper_process", mock_helper)
 
-        result = main(["thermo", "accept-license", "--data-directory", str(data_directory)])
+        result = main(["thermo", "accept-license"])
 
         output = capsys.readouterr().out
         assert result == 0
@@ -245,21 +231,20 @@ class TestThermoSetupCommands:
             ["--license-status"],
         ]
         assert mock_helper.license_accepted is True
+        assert mock_helper.config_directories == [str(thermo_config_directory())] * len(mock_helper.commands_run)
 
     def test_accept_license_reports_when_helper_does_not_record_acceptance(
         self,
-        tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        data_directory = tmp_path / "appdata"
-        _create_helper(data_directory)
+        _create_helper()
         mock_helper = MockThermoHelper(records_acceptance=False)
         monkeypatch.setattr(environment, "get_platform", lambda: "win32")
         monkeypatch.setattr(environment, "get_machine", lambda: "AMD64")
         monkeypatch.setattr(locator_module, "execute_helper_process", mock_helper)
 
-        result = main(["thermo", "accept-license", "--data-directory", str(data_directory)])
+        result = main(["thermo", "accept-license"])
 
         captured = capsys.readouterr()
         assert result == 1
