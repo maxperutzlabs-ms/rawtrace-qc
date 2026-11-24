@@ -22,6 +22,7 @@ from rawtrace_qc.errors import (
     ThermoHelperVersionError,
     UnsupportedPlatformError,
 )
+from rawtrace_qc.thermo.runner import describe_helper_start_failure
 from rawtrace_qc.thermo.specification import (
     THERMO_HELPER_RELEASE,
     ThermoHelperSpecification,
@@ -251,10 +252,7 @@ def get_thermo_helper_status(
             path=candidate,
             version=None,
             license_accepted=False,
-            message=(
-                f"ThermoScanHeaderExtractor at {candidate} has an unreadable "
-                f"version: {error}"
-            ),
+            message=str(error),
             expected_version=specification.version,
         )
 
@@ -475,8 +473,7 @@ def query_helper_version(
         ) from error
     except OSError as error:
         raise ThermoHelperVersionError(
-            f"Failed to execute ThermoScanHeaderExtractor at "
-            f"{executable_path}: {error}."
+            describe_helper_start_failure(executable_path, error)
         ) from error
 
     if result.returncode != 0:
@@ -484,7 +481,7 @@ def query_helper_version(
         detail = f": {stderr_sample}" if stderr_sample else ""
         raise ThermoHelperVersionError(
             f"ThermoScanHeaderExtractor at {executable_path} failed with exit "
-            f"code {result.returncode}{detail}."
+            f"code {result.returncode} when asked for its version{detail}."
         )
 
     output = result.stdout.strip()

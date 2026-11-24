@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from rawtrace_qc import environment
 from rawtrace_qc.errors import (
     OperationCancelledError,
     ThermoHelperCommandError,
@@ -134,15 +135,13 @@ def run_thermo_helper(
         ) from error
     except FileNotFoundError as error:
         raise ThermoHelperExecutableNotFoundError(
-            f"Could not start ThermoScanHeaderExtractor command "
-            f"{command_arguments!r}: {error}.",
+            describe_helper_start_failure(command_arguments[0], error),
             stdout="",
             stderr="",
         ) from error
     except OSError as error:
         raise ThermoHelperExecutionError(
-            f"Could not execute ThermoScanHeaderExtractor command "
-            f"{command_arguments!r}: {error}.",
+            describe_helper_start_failure(command_arguments[0], error),
             stdout="",
             stderr="",
         ) from error
@@ -173,6 +172,42 @@ def run_thermo_helper(
         stdout=stdout,
         stderr=stderr,
     )
+
+
+def describe_helper_start_failure(executable_path: Path | str, error: OSError) -> str:
+    """Explain to the user why the helper executable could not be started.
+
+    On POSIX, a `PermissionError` means that the file has no execute bit or
+    that its folder does not allow running programs. On Linux, a
+    `FileNotFoundError` for an existing file means that the program loader is
+    missing, which is the case on musl-based systems such as Alpine Linux.
+
+    Args:
+        executable_path: Path of the helper executable.
+        error: The error raised when starting the process.
+
+    Returns:
+        A message that names the executable and how to fix the problem.
+    """
+    if isinstance(error, PermissionError) and environment.get_platform() != "win32":
+        return (
+            f"ThermoScanHeaderExtractor at {executable_path} cannot be run: the "
+            "file is not executable, or its folder does not allow running "
+            f"programs. To make the file executable, run `chmod +x {executable_path}`."
+        )
+    message = (
+        f"ThermoScanHeaderExtractor at {executable_path} could not be started: {error}."
+    )
+    if (
+        isinstance(error, FileNotFoundError)
+        and environment.get_platform().startswith("linux")
+        and Path(executable_path).is_file()
+    ):
+        message += (
+            " On Linux, it needs glibc (for example Ubuntu, Debian, or Fedora) and "
+            "does not run on Alpine Linux or other musl-based systems."
+        )
+    return message
 
 
 def _execute_process(

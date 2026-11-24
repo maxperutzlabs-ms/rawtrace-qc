@@ -24,6 +24,7 @@
 - **Breaking:** `ColumnLogicalType.TEXT`. It was only used by `activation_type`, which is no longer reserved, so no schema-v1 column has a text type.
 
 ### Fixed
+- If the Thermo tool cannot be started, the message now explains why: on Linux and macOS, a file without execute permission is reported as "not executable", and on Linux, a missing program loader is reported as a system without glibc.
 - Trace files whose `faims_cv` column is null in only some rows now load, as the specification allows, and `extract` writes them. Reports still leave such a file out, with a message that the FAIMS CV is missing for some scans.
 
 ## [0.1.0] - 2026-11-05

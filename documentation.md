@@ -246,7 +246,7 @@ Keep this behavior when you change the report:
 
 ## Thermo helper
 
-The helper is a separate program with its own Thermo license, so we do not bundle it. `thermo/specification.py` pins its version and the SHA-256 digest of each archive. rawtrace-qc pins all six upstream runtimes: `win-x64` and `win-arm64` as ZIP archives, and `linux-x64`, `linux-arm64`, `osx-x64`, and `osx-arm64` as `.tar.gz` archives. On Linux, the helper needs glibc, so it does not run on Alpine Linux or other musl-based systems. On macOS, it needs macOS 14 or later.
+The helper is a separate program with its own Thermo license, so we do not bundle it. `thermo/specification.py` pins its version and the SHA-256 digest of each archive. rawtrace-qc pins all six upstream runtimes: `win-x64` and `win-arm64` as ZIP archives, and `linux-x64`, `linux-arm64`, `osx-x64`, and `osx-arm64` as `.tar.gz` archives. On Linux, the helper needs glibc, so it does not run on Alpine Linux or other musl-based systems. On macOS, it needs macOS 14 or later. `thermo.runner.describe_helper_start_failure()` explains why the helper cannot be started (a missing execute bit on POSIX, or missing glibc on Linux).
 
 Rawtrace-qc finds the helper in one of two ways:
 

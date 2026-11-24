@@ -13,10 +13,16 @@ from rawtrace_qc.errors import (
     OperationCancelledError,
     ThermoHelperCommandError,
     ThermoHelperExecutableNotFoundError,
+    ThermoHelperExecutionError,
     ThermoHelperOutputError,
     ThermoHelperTimeoutError,
 )
-from rawtrace_qc.thermo import build_thermo_helper_command, run_thermo_helper
+from rawtrace_qc.thermo import (
+    ThermoHelperState,
+    build_thermo_helper_command,
+    get_thermo_helper_status,
+    run_thermo_helper,
+)
 from rawtrace_qc.thermo import runner as runner_module
 
 _MOCK_HELPER_SCRIPT = Path(__file__).resolve().parents[1] / "support" / "mock_helper.py"
@@ -225,3 +231,18 @@ class TestRunThermoHelper:
 
         with pytest.raises(ValueError, match="timeout must be greater than zero"):
             run_thermo_helper(["helper.exe"], timeout=0)
+
+
+class TestHelperStartFailure:
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX execute permission")
+    def test_explains_a_helper_without_execute_permission(self, tmp_path: Path) -> None:
+        executable = tmp_path / "ThermoScanHeaderExtractor"
+        executable.write_text("#!/bin/sh\n", encoding="utf-8")
+        executable.chmod(0o644)
+
+        status = get_thermo_helper_status(executable)
+
+        assert status.state is ThermoHelperState.INVALID_VERSION
+        assert "chmod +x" in status.message
+        with pytest.raises(ThermoHelperExecutionError, match="not executable"):
+            run_thermo_helper([executable])

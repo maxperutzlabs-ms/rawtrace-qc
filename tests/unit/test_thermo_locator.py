@@ -243,7 +243,7 @@ class TestGetThermoHelperStatus:
         assert status.path == exe.resolve()
         assert status.version is None
         assert not status.is_ready
-        assert "unreadable version" in status.message
+        assert "exit code 1" in status.message
 
     def test_returns_invalid_version_state_when_helper_returns_empty_output(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -288,7 +288,7 @@ class TestGetThermoHelperStatus:
         assert status.path == exe.resolve()
         assert status.version is None
         assert not status.is_ready
-        assert "Failed to execute" in status.message
+        assert "could not be started" in status.message
 
 
 class TestLocateThermoHelper:
@@ -339,7 +339,7 @@ class TestLocateThermoHelper:
         mock_runner = MockThermoHelper(exit_code=1, stderr="crashed")
         monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
 
-        with pytest.raises(ThermoHelperVersionError, match="unreadable version"):
+        with pytest.raises(ThermoHelperVersionError, match="exit code 1"):
             locate_thermo_helper(exe)
 
     def test_returns_executable_path_when_ready(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -427,7 +427,7 @@ class TestQueryHelperVersion:
         mock_runner = MockThermoHelper(exit_code=1, stderr="fatal error")
         monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
 
-        with pytest.raises(ThermoHelperVersionError, match="failed with exit code 1: fatal error"):
+        with pytest.raises(ThermoHelperVersionError, match="exit code 1 when asked for its version: fatal error"):
             query_helper_version(exe)
 
     def test_raises_version_error_when_process_times_out(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -445,7 +445,18 @@ class TestQueryHelperVersion:
         mock_runner = MockThermoHelper(os_error=OSError("Exec format error"))
         monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
 
-        with pytest.raises(ThermoHelperVersionError, match="Failed to execute"):
+        with pytest.raises(ThermoHelperVersionError, match="could not be started"):
+            query_helper_version(exe)
+
+    def test_mentions_glibc_when_the_program_loader_is_missing_on_linux(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(environment, "get_platform", lambda: "linux")
+        exe = create_mock_helper_file(tmp_path)
+        mock_runner = MockThermoHelper(os_error=FileNotFoundError("No such file or directory"))
+        monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
+
+        with pytest.raises(ThermoHelperVersionError, match="glibc"):
             query_helper_version(exe)
 
 
