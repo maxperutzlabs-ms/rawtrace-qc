@@ -13,7 +13,6 @@ class ColumnLogicalType(StrEnum):
 
     INTEGER = "integer"
     FLOAT = "float"
-    TEXT = "text"
 
 
 class ColumnSupport(StrEnum):

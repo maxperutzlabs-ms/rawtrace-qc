@@ -223,13 +223,8 @@ def _validate_column_type(table: pa.Table, definition: ColumnDefinition) -> None
     data_type = table.schema.field(definition.name).type
     if definition.logical_type is ColumnLogicalType.INTEGER:
         valid = pa.types.is_integer(data_type)
-    elif definition.logical_type is ColumnLogicalType.FLOAT:
-        valid = pa.types.is_floating(data_type)
     else:
-        valid = pa.types.is_string(data_type) or (
-            pa.types.is_dictionary(data_type)
-            and pa.types.is_string(data_type.value_type)
-        )
+        valid = pa.types.is_floating(data_type)
     if not valid:
         raise ArtifactValidationError(
             f"Column {definition.name!r} has an invalid Arrow type: {data_type}."

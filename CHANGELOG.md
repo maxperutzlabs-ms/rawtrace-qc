@@ -8,6 +8,9 @@
 ### Changed
 - The trace schema no longer reserves the columns `charge_state`, `collision_energy`, and `activation_type`. They are out of scope for now.
 
+### Removed
+- **Breaking:** `ColumnLogicalType.TEXT`. It was only used by `activation_type`, which is no longer reserved, so no schema-v1 column has a text type.
+
 ## [0.1.0] - 2026-11-05
 
 ### Added
