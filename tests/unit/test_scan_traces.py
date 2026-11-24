@@ -112,12 +112,22 @@ class TestScanTraceValidation:
 
         assert artifact.table["faims_cv"].to_pylist() == [-50.0, -60.0]
 
-    def test_load_rejects_non_numeric_faims_column(self, tmp_path: Path) -> None:
-        table = _table().append_column("faims_cv", pa.array(["A", "B"]))
-        path = tmp_path / "invalid-faims.parquet"
+    def test_strict_load_accepts_injection_time_column_with_null_values(self, tmp_path: Path) -> None:
+        table = _table().append_column("injection_time_ms", pa.array([5.0, None], type=pa.float32()))
+        path = tmp_path / "injection-time.parquet"
         pq.write_table(table.replace_schema_metadata(_metadata()), path, compression="snappy")
 
-        with pytest.raises(ArtifactValidationError, match="faims_cv.*invalid Arrow type"):
+        artifact = load_trace(path)
+
+        assert artifact.table["injection_time_ms"].to_pylist() == [5.0, None]
+
+    @pytest.mark.parametrize("column", ["faims_cv", "injection_time_ms"])
+    def test_load_rejects_non_numeric_optional_float_column(self, tmp_path: Path, column: str) -> None:
+        table = _table().append_column(column, pa.array(["A", "B"]))
+        path = tmp_path / "invalid-column.parquet"
+        pq.write_table(table.replace_schema_metadata(_metadata()), path, compression="snappy")
+
+        with pytest.raises(ArtifactValidationError, match=f"{column}.*invalid Arrow type"):
             load_trace(path)
 
     def test_load_rejects_missing_required_column(self, tmp_path: Path) -> None:
@@ -143,12 +153,12 @@ class TestScanTraceValidation:
             load_trace(path)
 
     def test_non_strict_load_accepts_known_future_and_unknown_columns(self, tmp_path: Path) -> None:
-        table = _table().append_column("injection_time_ms", pa.array([5.0, 6.0], type=pa.float32()))
+        table = _table().append_column("base_peak_mz", pa.array([500.0, 600.0], type=pa.float64()))
         table = table.append_column("future_column", pa.array(["a", "b"], type=pa.string()))
         path = tmp_path / "future.parquet"
         pq.write_table(table.replace_schema_metadata(_metadata()), path, compression="snappy")
 
-        with pytest.raises(ArtifactValidationError, match="not implemented"):
+        with pytest.raises(ArtifactValidationError, match="not implemented.*base_peak_mz"):
             load_trace(path)
 
         artifact = load_trace(path, strict=False)

@@ -191,7 +191,7 @@ All extractors share this behavior:
 - `MsMsType` 0 is MS1, and all other values are MS2. Frames in `DiaFrameMsMsInfo` are also MS2.
 - MSn rows have the granularity `frame-aggregate`, because one frame can contain several precursor isolation events.
 - We use the native `MaxIntensity` and not the interpolated BPC trace. The BPC trace follows only MS1 frames, so it differs strongly from `MaxIntensity` for MSn frames.
-- It does not write a `faims_cv` column, and it does not read the `.tdf_bin` file.
+- It does not write the `faims_cv` or `injection_time_ms` columns, and it does not read the `.tdf_bin` file.
 
 `ThermoExtractor` runs the helper in a temporary folder in the destination, validates the result, and only then moves the files to their final names. A failure therefore leaves no partial output. The default timeout is 600 seconds, and the `cancel` event stops a running helper immediately.
 
@@ -202,9 +202,9 @@ The specification in `docs/scan-trace-spec.md` is the source of truth for the sc
 | Column | Status |
 |---|---|
 | `scan_id`, `retention_time_sec`, `ms_level` | Required, no nulls |
-| `total_ion_current`, `base_peak_intensity` | Optional, a null means a failed row |
+| `total_ion_current`, `base_peak_intensity`, `injection_time_ms` | Optional, a null means a failed row |
 | `faims_cv` | Optional, either all null or all finite numbers |
-| `injection_time_ms`, `base_peak_mz`, `polarity`, `precursor_mz`, `isolation_window_lower_mz`, `isolation_window_upper_mz` | Reserved, not implemented |
+| `base_peak_mz`, `polarity`, `precursor_mz`, `isolation_window_lower_mz`, `isolation_window_upper_mz` | Reserved, not implemented |
 
 Parquet metadata has required and optional fields:
 

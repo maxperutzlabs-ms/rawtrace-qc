@@ -75,7 +75,7 @@ A column may be **entirely omitted** if not attempted. Column present = "attempt
 | `total_ion_current` | float | intensity | Native value: one per spectrum for Thermo, read from the scan header (scan statistics); one per frame for Bruker, read from `Frames.SummedIntensities`. Bruker MSn caveat: §7. |
 | `base_peak_intensity` | float | intensity | Native value: one per spectrum for Thermo, read from the scan header (scan statistics); one per frame for Bruker, read from `Frames.MaxIntensity`. Same caveats as `total_ion_current` (§7). |
 | `faims_cv` | float | volts | Thermo-only. Omitted (not all-null) when FAIMS unused. Bruker must not populate this (§7). Always 32-bit (§8). |
-| `injection_time_ms` | float | milliseconds | Thermo: trailer-extra value (verify label per firmware). Bruker: `Frames.AccumulationTime`. Always 32-bit (§8). |
+| `injection_time_ms` | float | milliseconds | Thermo: ion injection time of the scan, from the scan trailer. Bruker: ion accumulation time of the frame (`Frames.AccumulationTime`). Always 32-bit (§8). |
 
 ### 5.3 Reserved columns (not implemented in v1)
 Pre-standardized names/types so implementations don't diverge later. All m/z columns are **always 64-bit** (see §8).
