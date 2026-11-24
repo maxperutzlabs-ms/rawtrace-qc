@@ -13,13 +13,14 @@ from rawtrace_qc.thermo.license import (
 from rawtrace_qc.thermo.locator import (
     ThermoHelperState,
     ThermoHelperStatus,
+    ThermoLicenseStatus,
     execute_helper_process,
     find_thermo_helper_path,
     get_thermo_helper_status,
-    is_license_accepted,
     locate_thermo_helper,
     managed_thermo_helper_directory,
     query_helper_version,
+    query_license_status,
     verify_helper_version,
 )
 from rawtrace_qc.thermo.runner import (
@@ -28,7 +29,6 @@ from rawtrace_qc.thermo.runner import (
 )
 from rawtrace_qc.thermo.runtime import find_host_runtime
 from rawtrace_qc.thermo.specification import (
-    RUNTIME_FALLBACKS,
     THERMO_HELPER_NAME,
     THERMO_HELPER_RELEASE,
     ThermoHelperAsset,
@@ -39,7 +39,6 @@ from rawtrace_qc.thermo.specification import (
 )
 
 __all__ = [
-    "RUNTIME_FALLBACKS",
     "THERMO_HELPER_NAME",
     "THERMO_HELPER_RELEASE",
     "ThermoHelperAsset",
@@ -47,6 +46,7 @@ __all__ = [
     "ThermoHelperSpecification",
     "ThermoHelperState",
     "ThermoHelperStatus",
+    "ThermoLicenseStatus",
     "accept_thermo_license",
     "build_thermo_helper_command",
     "download_thermo_helper_archive",
@@ -56,12 +56,12 @@ __all__ = [
     "find_thermo_helper_path",
     "get_thermo_helper_status",
     "get_thermo_license_text",
-    "is_license_accepted",
     "is_thermo_helper_supported",
     "install_thermo_helper",
     "locate_thermo_helper",
     "managed_thermo_helper_directory",
     "query_helper_version",
+    "query_license_status",
     "resolve_thermo_helper_specification",
     "run_thermo_helper",
     "verify_helper_version",

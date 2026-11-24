@@ -87,20 +87,46 @@ class ThermoHelperRelease:
 
 
 THERMO_HELPER_RELEASE = ThermoHelperRelease(
-    version="0.2.0",
+    version="0.3.1",
     assets={
         "win-x64": ThermoHelperAsset(
-            asset_name="ThermoScanHeaderExtractor-v0.2.0-win-x64.zip",
-            sha256="4b09265da895b67f810d33dc1a598545c0dc9d7bf3be0e5cccd308a7919a42f4",
+            asset_name="ThermoScanHeaderExtractor-v0.3.1-win-x64.zip",
+            sha256="f406bb37ac0eee24b326b20a32eec6838cf33cec75c59eeb50ff59bcddab1b86",
             archive_format="zip",
             executable_name="ThermoScanHeaderExtractor.exe",
         ),
+        "win-arm64": ThermoHelperAsset(
+            asset_name="ThermoScanHeaderExtractor-v0.3.1-win-arm64.zip",
+            sha256="9ad2461ed47ca2e0ea5f426cec321bdbdfa5e8b60678c983d6664b0368f68fc6",
+            archive_format="zip",
+            executable_name="ThermoScanHeaderExtractor.exe",
+        ),
+        "linux-x64": ThermoHelperAsset(
+            asset_name="ThermoScanHeaderExtractor-v0.3.1-linux-x64.tar.gz",
+            sha256="6c41263d12bd39ef9ba25a934061e28f3630afcc9d66af660b7c6b3a0ba3cb93",
+            archive_format="tar.gz",
+            executable_name="ThermoScanHeaderExtractor",
+        ),
+        "linux-arm64": ThermoHelperAsset(
+            asset_name="ThermoScanHeaderExtractor-v0.3.1-linux-arm64.tar.gz",
+            sha256="123a49306a7d73078563b89720f912bf1e35a2a0b85b43952677442149fe7ecd",
+            archive_format="tar.gz",
+            executable_name="ThermoScanHeaderExtractor",
+        ),
+        "osx-x64": ThermoHelperAsset(
+            asset_name="ThermoScanHeaderExtractor-v0.3.1-osx-x64.tar.gz",
+            sha256="c51435938f11cec0df3d07a9be7e1e55c8f3344482d73581de49b403160449db",
+            archive_format="tar.gz",
+            executable_name="ThermoScanHeaderExtractor",
+        ),
+        "osx-arm64": ThermoHelperAsset(
+            asset_name="ThermoScanHeaderExtractor-v0.3.1-osx-arm64.tar.gz",
+            sha256="e6e0b4cdfafcee41a0a70ccdda427c010b26ce8e3e4919e0bf56d5307f0f0547",
+            archive_format="tar.gz",
+            executable_name="ThermoScanHeaderExtractor",
+        ),
     },
 )
-
-# Runtimes without a pinned asset that can run another pinned runtime's asset.
-# Windows on Arm executes the win-x64 build under x64 emulation.
-RUNTIME_FALLBACKS: Mapping[str, str] = {"win-arm64": "win-x64"}
 
 
 def resolve_thermo_helper_specification(
@@ -109,9 +135,6 @@ def resolve_thermo_helper_specification(
     release: ThermoHelperRelease = THERMO_HELPER_RELEASE,
 ) -> ThermoHelperSpecification:
     """Resolve the helper specification for a runtime.
-
-    If the runtime has no pinned asset in `release`, `RUNTIME_FALLBACKS` is
-    consulted once (for example, `win-arm64` runs the `win-x64` asset).
 
     Args:
         runtime: Runtime identifier such as `win-x64`. If None (default),
@@ -123,8 +146,8 @@ def resolve_thermo_helper_specification(
         The specification of the asset to use for the runtime.
 
     Raises:
-        UnsupportedPlatformError: If the host is not recognized or neither
-            the runtime nor its fallback has a pinned asset.
+        UnsupportedPlatformError: If the host is not recognized or the
+            runtime has no pinned asset.
     """
     selected = find_host_runtime() if runtime is None else runtime
     if selected is None:
@@ -134,7 +157,7 @@ def resolve_thermo_helper_specification(
             f"{environment.get_machine()!r}. "
             f"Supported runtimes are {sorted(release.assets)}."
         )
-    return release.specification(_pinned_runtime(selected, release))
+    return release.specification(selected)
 
 
 def is_thermo_helper_supported(
@@ -144,9 +167,9 @@ def is_thermo_helper_supported(
 ) -> bool:
     """Return whether the helper is available for a runtime.
 
-    A runtime is supported if it has a pinned asset in `release`, or if its
-    entry in `RUNTIME_FALLBACKS` does. This check never raises for an
-    unrecognized host, and does not check whether the helper is installed.
+    A runtime is supported if it has a pinned asset in `release`. This check
+    never raises for an unrecognized host, and does not check whether the
+    helper is installed.
 
     Args:
         runtime: Runtime identifier such as `win-x64`. If None (default),
@@ -160,11 +183,4 @@ def is_thermo_helper_supported(
     selected = find_host_runtime() if runtime is None else runtime
     if selected is None:
         return False
-    return _pinned_runtime(selected, release) in release.assets
-
-
-def _pinned_runtime(runtime: str, release: ThermoHelperRelease) -> str:
-    if runtime in release.assets:
-        return runtime
-    fallback = RUNTIME_FALLBACKS.get(runtime, runtime)
-    return fallback if fallback in release.assets else runtime
+    return selected in release.assets

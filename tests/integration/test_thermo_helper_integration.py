@@ -9,7 +9,7 @@ from rawtrace_qc.thermo import (
     ThermoHelperState,
     get_thermo_helper_status,
     install_thermo_helper,
-    is_license_accepted,
+    query_license_status,
     verify_helper_version,
 )
 from tests.support.thermo_helper import get_or_download_thermo_helper_archive, resolve_specification_or_skip
@@ -36,8 +36,10 @@ def test_downloads_installs_and_reports_version_and_license_state(tmp_path: Path
 
     # The license state belongs to the current user and is never changed here;
     # only check that the helper's answer is consistent with the reported status.
-    license_accepted = is_license_accepted(executable)
+    license_status = query_license_status(executable)
     status = get_thermo_helper_status(data_directory=data_directory, specification=specification)
-    expected_state = ThermoHelperState.READY if license_accepted else ThermoHelperState.UNLICENSED
+    expected_state = ThermoHelperState.READY if license_status.accepted else ThermoHelperState.UNLICENSED
     assert status.state is expected_state
-    assert status.license_accepted is license_accepted
+    assert status.license_accepted is license_status.accepted
+    assert status.license_marker_path == license_status.marker_path
+    assert license_status.marker_path.name == ".thermo-license-accepted"

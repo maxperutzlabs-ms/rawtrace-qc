@@ -75,7 +75,7 @@ class ThermoHelperExecutableNotFoundError(ThermoHelperExecutionError):
 
 
 class ThermoHelperOutputError(ThermoHelperExecutionError):
-    """Raise when the Thermo helper output cannot be decoded as UTF-8."""
+    """Raise when the Thermo helper output is not valid UTF-8 or not as expected."""
 
 
 class UnsupportedPlatformError(ThermoHelperError):
@@ -92,6 +92,10 @@ class ThermoHelperVersionError(ThermoHelperError):
 
 class ThermoHelperLicenseError(ThermoHelperError):
     """Raise when the Thermo license agreement has not been accepted."""
+
+
+class ThermoHelperConfigError(ThermoHelperError):
+    """Raise when the Thermo helper cannot use its license and config folder."""
 
 
 class ThermoHelperInstallationError(ThermoHelperError):

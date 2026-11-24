@@ -7,6 +7,8 @@
 - `traces` describes the full contract: `ColumnDefinition` has a unit, the files that may contain the column, and a fixed bit width (`ColumnBitWidth`), and `TRACE_METADATA` describes each metadata field with `MetadataDefinition`.
 
 ### Changed
+- rawtrace-qc now uses version 0.3.1 of the Thermo tool (`ThermoScanHeaderExtractor`) and supports Thermo files on Linux and macOS, including installation from the `.tar.gz` archives of these systems. Windows on Arm uses its own build instead of the x64 build. The new version comes with new Thermo license terms. Thermo trace files now give `acquisition_start_time` as the local clock time of the acquisition computer, without a trailing `Z`.
+- The license state of the Thermo tool is read with its `--license-status` command. `ThermoHelperStatus` has the new field `license_marker_path`, and `query_license_status()` returns a `ThermoLicenseStatus`. If the Thermo tool cannot use its license folder, rawtrace-qc raises the new `ThermoHelperConfigError`.
 - The trace schema no longer reserves the columns `charge_state`, `collision_energy`, and `activation_type`. They are out of scope for now.
 - Trace files may contain the optional `injection_time_ms` column, as the specification allows. Strict loading no longer rejects it as reserved.
 - Loading and writing a trace now rejects files without rows, with a repeated `scan_id`, or with rows that are not sorted by retention time and then by `scan_id`, as the specification requires.
@@ -14,6 +16,8 @@
 - Error messages about a column with the wrong type now say which kind of numbers the column must contain.
 
 ### Removed
+- **Breaking:** `RUNTIME_FALLBACKS`. Every supported runtime now has its own pinned build, so there is nothing to replace it with.
+- **Breaking:** `is_license_accepted()`. Use `query_license_status(executable).accepted` instead.
 - **Breaking:** `ColumnLogicalType.TEXT`. It was only used by `activation_type`, which is no longer reserved, so no schema-v1 column has a text type.
 
 ### Fixed

@@ -186,10 +186,8 @@ def resolve_integration_thermo_helper(
             raise ThermoHelperVersionError(cache_status.message)
 
     if cache_status.state is ThermoHelperState.UNLICENSED:
-        # Acceptance is recorded per user by the helper, so tests must never
-        # accept the Thermo license on the developer's behalf.
         pytest.skip(
-            "Thermo license terms are not accepted for this user; review and accept them with "
+            f"Thermo license terms are not accepted ({cache_status.message}); review and accept them with "
             f"`rawtrace-qc thermo accept-license --helper-path {cache_status.path}` to run this test."
         )
 

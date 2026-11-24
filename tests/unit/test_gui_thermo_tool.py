@@ -176,13 +176,7 @@ class TestThermoAssetLabel:
         monkeypatch.setattr(environment, "get_platform", lambda: "win32")
         monkeypatch.setattr(environment, "get_machine", lambda: "ARM64")
 
-        assert thermo_asset_label() == "ThermoScanHeaderExtractor-v0.2.0-win-x64.zip"
-
-    def test_names_unsupported_runtime(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(environment, "get_platform", lambda: "linux")
-        monkeypatch.setattr(environment, "get_machine", lambda: "x86_64")
-
-        assert thermo_asset_label() == "Not supported on linux-x64"
+        assert thermo_asset_label() == f"ThermoScanHeaderExtractor-v{THERMO_HELPER_RELEASE.version}-win-arm64.zip"
 
     def test_handles_undetectable_runtime(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(environment, "get_platform", lambda: "freebsd13")
@@ -253,11 +247,12 @@ class TestThermoToolDialog:
 
     def test_unsupported_platform_shows_no_install_location(self, dialog, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(environment, "get_platform", lambda: "linux")
+        monkeypatch.setattr(environment, "get_machine", lambda: "riscv64")
 
         window = dialog(ThermoHelperState.UNSUPPORTED_PLATFORM)
 
         assert window.location_note.text() == ""
-        assert window.asset_label.text() == "Not supported on linux-x64"
+        assert window.asset_label.text() == "Not supported on this system"
         assert window.download_button.isHidden()
 
     def test_release_link_opens_the_pinned_release_page(self, dialog) -> None:

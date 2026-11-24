@@ -33,18 +33,13 @@ def _archive_specification(payload: bytes) -> resolver.ThermoHelperSpecification
 
 
 class TestResolveSpecificationOrSkip:
-    @pytest.mark.parametrize("machine", ["AMD64", "ARM64"])
-    def test_returns_win_x64_specification_on_supported_host(
-        self, monkeypatch: pytest.MonkeyPatch, machine: str
-    ) -> None:
+    def test_returns_win_x64_specification_on_supported_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(environment, "get_platform", lambda: "win32")
-        monkeypatch.setattr(environment, "get_machine", lambda: machine)
+        monkeypatch.setattr(environment, "get_machine", lambda: "AMD64")
 
         assert resolver.resolve_specification_or_skip() == resolver.WIN_X64_SPECIFICATION
 
-    @pytest.mark.parametrize(
-        ("platform_name", "machine"), [("linux", "x86_64"), ("darwin", "arm64"), ("freebsd13", "amd64")]
-    )
+    @pytest.mark.parametrize(("platform_name", "machine"), [("linux", "riscv64"), ("freebsd13", "amd64")])
     def test_skips_on_unsupported_or_unrecognized_host_and_names_the_host(
         self, monkeypatch: pytest.MonkeyPatch, platform_name: str, machine: str
     ) -> None:

@@ -39,14 +39,14 @@ class TestThermoExtractionIntegration:
         assert ms1.metadata["row_granularity"] == "spectrum"
         assert ms1.metadata["source_filename"] == "exploris480_ms1_dia_3cycles.raw"
         assert ms1.metadata["source_id"] == "MA10459C_20260930114656"
-        assert ms1.metadata["acquisition_start_time"] == "2026-09-30T11:46:56Z"
+        assert ms1.metadata["acquisition_start_time"] == "2026-09-30T11:46:56"
 
         assert msn.metadata["vendor"] == "thermo"
         assert msn.metadata["ms_level_file"] == "msn"
         assert msn.metadata["row_granularity"] == "spectrum"
         assert msn.metadata["source_filename"] == "exploris480_ms1_dia_3cycles.raw"
         assert msn.metadata["source_id"] == "MA10459C_20260930114656"
-        assert msn.metadata["acquisition_start_time"] == "2026-09-30T11:46:56Z"
+        assert msn.metadata["acquisition_start_time"] == "2026-09-30T11:46:56"
 
         assert ms1.table.num_rows == 3
         assert msn.table.num_rows == 36

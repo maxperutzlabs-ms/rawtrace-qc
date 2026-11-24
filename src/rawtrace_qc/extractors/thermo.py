@@ -34,8 +34,7 @@ class ThermoExtractor:
     license has been accepted, executes extraction to a temporary staging
     location, validates the resulting schema-v1 Parquet trace files, and moves
     them to the requested destination directory. Any failure cleans up partial
-    outputs and raises an informative error. Currently supported runtimes:
-    `win-x64` (Windows on Arm runs it under x64 emulation).
+    outputs and raises an informative error.
     """
 
     def __init__(

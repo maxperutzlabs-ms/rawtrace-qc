@@ -111,7 +111,7 @@ Some test fixtures have special rules:
 - **Network:** Use `urlopen_or_skip()` from `tests/support/network.py`. It skips on network and proxy failures, but it fails on a missing asset.
 - **Qt:** GUI tests use `pytest.importorskip` and the `offscreen` Qt platform, so they run without a display.
 
-Because helper v0.2.0 records the license state for each user, and on Windows that location cannot be redirected, tests cannot create an unaccepted state with the real helper. Mock tests therefore cover the unaccepted state and the acceptance flow. CI accepts the license on Windows on purpose, so that the real Thermo integration tests run there.
+The helper records the license state for the user account, and the tests do not redirect it. Mock tests therefore cover the unaccepted state and the acceptance flow. CI accepts the license on Windows on purpose, so that the real Thermo integration tests run there.
 
 ## Code conventions
 
@@ -246,7 +246,7 @@ Keep this behavior when you change the report:
 
 ## Thermo helper
 
-The helper is a separate program with its own Thermo license, so we do not bundle it. `thermo/specification.py` pins its version and the SHA-256 digest of each archive. It is available upstream for Windows, Linux, and macOS, while rawtrace-qc currently pins only `win-x64`. Windows on Arm uses that build through emulation.
+The helper is a separate program with its own Thermo license, so we do not bundle it. `thermo/specification.py` pins its version and the SHA-256 digest of each archive. rawtrace-qc pins all six upstream runtimes: `win-x64` and `win-arm64` as ZIP archives, and `linux-x64`, `linux-arm64`, `osx-x64`, and `osx-arm64` as `.tar.gz` archives. On Linux, the helper needs glibc, so it does not run on Alpine Linux or other musl-based systems. On macOS, it needs macOS 14 or later.
 
 Rawtrace-qc finds the helper in one of two ways:
 
@@ -259,20 +259,26 @@ Rawtrace-qc finds the helper in one of two ways:
 
 The helper is the only authority on the license state:
 
-- A call without arguments exits with code 4 if the terms are not accepted, and with code 1 (usage) if they are. `is_license_accepted()` uses this probe. The order of these checks is an implementation detail of the helper, so re-check it when you change the pin.
+- `--license-status` changes nothing. It exits with code 0 if the terms are accepted and with code 4 if not, and in both cases prints one line with the path of the acceptance marker file. It exits with code 5 and prints nothing if it cannot determine that path, for example because `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR` is relative. `query_license_status()` runs it and returns a `ThermoLicenseStatus` with `accepted` and `marker_path`. Exit code 5 raises `ThermoHelperConfigError`, another code raises `ThermoHelperCommandError`, and unreadable output raises `ThermoHelperOutputError`.
+- `get_thermo_helper_status()` reports the marker path as `license_marker_path`. On exit code 5, the state is `UNLICENSED` with `license_marker_path` None, and `locate_thermo_helper()` raises, `extract_batch()` reports, and `rawtrace-qc thermo status` explains a `ThermoHelperConfigError` instead of `ThermoHelperLicenseError`. Any other failure of `--license-status` gives the state `INVALID_VERSION`, because the helper itself does not work.
 - `--thermo-license` prints the terms without accepting them.
-- `--agree-to-terms` records acceptance for the current user account. `accept_thermo_license()` returns early if the probe already reports acceptance. Otherwise, it runs this command and confirms the state with the probe.
+- `--agree-to-terms` records acceptance for the current user account, or in the folder that `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR` names. `accept_thermo_license()` returns early if `--license-status` already reports acceptance. Otherwise, it runs this command and confirms the state with `--license-status`.
 
-`ThermoExtractor` keeps exit codes 4 and 5 as setup problems, and it reports other non-zero exit codes and timeouts as `ExtractionError`. Other helper failures, such as an executable that cannot start, stay a `ThermoHelperError`. The helper uses these exit codes:
+`ThermoExtractor` keeps exit codes 4 and 5 as setup problems, and it reports other non-zero exit codes and timeouts as `ExtractionError`. Other helper failures, such as an executable that cannot start, stay a `ThermoHelperError`. Branch only on exit codes, never on the helper's stderr. The helper uses these exit codes:
 
 | Code | Meaning |
 |---|---|
-| 0 | Success |
-| 1 | Invalid arguments or a failed extraction |
-| 2 | Missing input file |
-| 3 | The input is not a readable `.raw` file |
-| 4 | The license is not accepted |
-| 5 | License handling failed |
+| 0 | Success. At least one non-empty trace file was written. |
+| 1 | Invalid usage. A call without arguments also exits with 1. |
+| 2 | The input file is missing or not accessible. |
+| 3 | The input is not a readable `.raw` file. |
+| 4 | The license is not accepted. |
+| 5 | The license or config folder cannot be used. |
+| 6 | The output files could not be written. |
+| 7 | Internal error of the helper. |
+| 8 | None of the requested MS levels has scans, so nothing was written. |
+
+Any other code means a crash or a newer helper. On POSIX, a negative code is a signal.
 
 ## CLI
 
@@ -323,17 +329,10 @@ An entry appears only after the extraction has finished, because `TraceCache` fi
 
 ### Change the helper version
 
-1. Update the version, the asset names, and the digests in `thermo/specification.py`.
+1. Update the version, the asset names, and the digests of all runtimes in `thermo/specification.py`.
 2. Update the unit tests that contain the old version, which you can find with a search in `tests/unit`.
 3. Run the tests with the `network` marker, which compare the pinned digests with the GitHub release.
-4. Check that the license probe still behaves as described in [Thermo helper](#thermo-helper).
-
-### Support Thermo files on another platform
-
-Upstream archives exist for Linux and macOS on x64 and arm64, so these steps should be sufficient. We have not tried them yet.
-
-1. Pin the assets in `thermo/specification.py`. The executable has no `.exe` extension on these platforms, and the archives are `.tar.gz` files.
-2. Add the OS to the `test-full` job in `ci.yml`, which currently runs only on Windows, and exclude the same OS and Python combination from `test-no-network`.
+4. Check the helper's changelog for changes to `--license-status`, the exit codes, and the output files, and update [Thermo helper](#thermo-helper).
 
 ### Add reports to the CLI
 
@@ -349,6 +348,7 @@ Media files are on the separate `media` branch in `docs/screenshots/`, so that t
 - MS2 traces are of limited use, and a better presentation is planned.
 - `ProcessingOptions` has no channel filter. The report selects the channels.
 - Precision is not reduced for compact HTML output.
+- The report shows `acquisition_start_time` as written. Thermo times are the local clock time of the acquisition computer without a time zone, and Bruker times are UTC, so the order of mixed-vendor reports is approximate.
 - The cache key does not contain the helper version, so a helper change within one `major.minor` version reuses existing entries.
 
 ## Maintain this document

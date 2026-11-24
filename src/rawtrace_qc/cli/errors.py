@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 
 from rawtrace_qc.errors import (
+    ThermoHelperConfigError,
     ThermoHelperError,
     ThermoHelperInstallConflictError,
     ThermoHelperLicenseError,
@@ -14,6 +15,7 @@ from rawtrace_qc.errors import (
 )
 
 CHECK_THERMO_SETUP = "Check setup with `rawtrace-qc thermo status`."
+THERMO_CONFIG_HINT = "Check the Thermo tool's license folder."
 
 
 def print_cli_error(error: Exception, *, thermo: bool = False) -> None:
@@ -52,6 +54,8 @@ def thermo_setup_hint(error: Exception) -> str | None:
             "Review and accept the displayed terms with "
             "`rawtrace-qc thermo accept-license`."
         )
+    if isinstance(error, ThermoHelperConfigError):
+        return THERMO_CONFIG_HINT
     if isinstance(error, ThermoHelperVersionError):
         return (
             "Replace it with the pinned helper version using "

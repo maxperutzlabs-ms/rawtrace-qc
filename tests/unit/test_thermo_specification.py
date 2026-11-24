@@ -76,41 +76,25 @@ class TestThermoHelperRelease:
         assert release.specification("win-x64").download_url.startswith(f"{repository_url}/releases/download/")
 
     def test_specification_raises_unsupported_platform_error_listing_supported_runtimes(self) -> None:
-        with pytest.raises(UnsupportedPlatformError, match=r"'linux-x64'.*\['win-x64'\]"):
-            THERMO_HELPER_RELEASE.specification("linux-x64")
+        with pytest.raises(UnsupportedPlatformError, match=r"'linux-riscv64'.*\[.*'win-x64'.*\]"):
+            THERMO_HELPER_RELEASE.specification("linux-riscv64")
 
 
 class TestResolveThermoHelperSpecification:
     def test_resolves_explicit_runtime(self) -> None:
         assert resolve_thermo_helper_specification("win-x64").runtime == "win-x64"
 
-    def test_win_arm64_falls_back_to_win_x64(self) -> None:
-        assert resolve_thermo_helper_specification("win-arm64") == THERMO_HELPER_RELEASE.specification("win-x64")
+    @pytest.mark.parametrize(
+        ("platform_name", "machine", "runtime"),
+        [("win32", "ARM64", "win-arm64"), ("linux", "x86_64", "linux-x64"), ("darwin", "arm64", "osx-arm64")],
+    )
+    def test_detects_host_runtime_when_none_is_given(
+        self, monkeypatch: pytest.MonkeyPatch, platform_name: str, machine: str, runtime: str
+    ) -> None:
+        monkeypatch.setattr(environment, "get_platform", lambda: platform_name)
+        monkeypatch.setattr(environment, "get_machine", lambda: machine)
 
-    def test_unpinned_runtime_without_fallback_raises_unsupported_platform_error(self) -> None:
-        with pytest.raises(UnsupportedPlatformError, match="'osx-arm64'"):
-            resolve_thermo_helper_specification("osx-arm64")
-
-    def test_fallback_is_skipped_when_runtime_is_pinned(self) -> None:
-        arm_asset = replace(
-            THERMO_HELPER_RELEASE.assets["win-x64"], asset_name="ThermoScanHeaderExtractor-v0.2.0-win-arm64.zip"
-        )
-        release = ThermoHelperRelease(version="0.2.0", assets={**THERMO_HELPER_RELEASE.assets, "win-arm64": arm_asset})
-
-        assert resolve_thermo_helper_specification("win-arm64", release=release).asset_name == arm_asset.asset_name
-
-    def test_detects_host_runtime_when_none_is_given(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(environment, "get_platform", lambda: "win32")
-        monkeypatch.setattr(environment, "get_machine", lambda: "ARM64")
-
-        assert resolve_thermo_helper_specification().runtime == "win-x64"
-
-    def test_unsupported_host_raises_unsupported_platform_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(environment, "get_platform", lambda: "linux")
-        monkeypatch.setattr(environment, "get_machine", lambda: "x86_64")
-
-        with pytest.raises(UnsupportedPlatformError, match="'linux-x64'"):
-            resolve_thermo_helper_specification()
+        assert resolve_thermo_helper_specification().runtime == runtime
 
     @pytest.mark.parametrize(
         ("platform_name", "machine"), [("freebsd13", "amd64"), ("win32", "x86"), ("linux", "riscv64")]
@@ -122,7 +106,7 @@ class TestResolveThermoHelperSpecification:
         monkeypatch.setattr(environment, "get_machine", lambda: machine)
 
         with pytest.raises(
-            UnsupportedPlatformError, match=rf"{platform_name!r} and machine {machine!r}.*\['win-x64'\]"
+            UnsupportedPlatformError, match=rf"{platform_name!r} and machine {machine!r}.*\[.*'win-x64'.*\]"
         ):
             resolve_thermo_helper_specification()
 
@@ -133,12 +117,13 @@ class TestIsThermoHelperSupported:
         [
             ("win32", "AMD64", True),
             ("win32", "ARM64", True),
-            ("linux", "x86_64", False),
-            ("linux", "aarch64", False),
-            ("darwin", "x86_64", False),
-            ("darwin", "arm64", False),
+            ("linux", "x86_64", True),
+            ("linux", "aarch64", True),
+            ("darwin", "x86_64", True),
+            ("darwin", "arm64", True),
             ("freebsd13", "amd64", False),
             ("win32", "x86", False),
+            ("linux", "riscv64", False),
         ],
     )
     def test_reports_support_for_current_host(
@@ -149,10 +134,7 @@ class TestIsThermoHelperSupported:
 
         assert is_thermo_helper_supported() is expected
 
-    @pytest.mark.parametrize(
-        ("runtime", "expected"),
-        [("win-x64", True), ("win-arm64", True), ("linux-x64", False), ("not-a-runtime", False)],
-    )
+    @pytest.mark.parametrize(("runtime", "expected"), [("linux-x64", True), ("not-a-runtime", False)])
     def test_reports_support_for_explicit_runtime(self, runtime: str, expected: bool) -> None:
         assert is_thermo_helper_supported(runtime) is expected
 
@@ -161,20 +143,7 @@ class TestIsThermoHelperSupported:
         release = ThermoHelperRelease(version="0.2.0", assets={"linux-x64": asset})
 
         assert is_thermo_helper_supported("linux-x64", release=release) is True
-
-    def test_does_not_support_fallback_runtime_when_target_is_not_pinned(self) -> None:
-        release = ThermoHelperRelease(version="0.2.0", assets={})
-
-        assert is_thermo_helper_supported("win-arm64", release=release) is False
-
-    def test_supported_runtime_resolves_to_a_specification(self) -> None:
-        assert is_thermo_helper_supported("win-arm64") is True
-        assert resolve_thermo_helper_specification("win-arm64").runtime == "win-x64"
-
-    def test_unsupported_runtime_fails_specification_resolution(self) -> None:
-        assert is_thermo_helper_supported("osx-arm64") is False
-        with pytest.raises(UnsupportedPlatformError):
-            resolve_thermo_helper_specification("osx-arm64")
+        assert is_thermo_helper_supported("win-x64", release=release) is False
 
 
 class TestPublishedThermoHelperRelease:

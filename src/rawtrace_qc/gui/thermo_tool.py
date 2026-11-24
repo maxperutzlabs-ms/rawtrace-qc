@@ -13,7 +13,6 @@ from rawtrace_qc.thermo import (
     ThermoHelperState,
     ThermoHelperStatus,
     accept_thermo_license,
-    find_host_runtime,
     get_thermo_helper_status,
     get_thermo_license_text,
     install_thermo_helper,
@@ -155,11 +154,11 @@ def thermo_asset_label() -> str:
     """Return the release archive required on this system.
 
     Returns:
-        The archive name, or a note naming the unsupported runtime.
+        The archive name, or a note that this system is not supported.
     """
     if is_thermo_helper_supported():
         return resolve_thermo_helper_specification().asset_name
-    return f"Not supported on {find_host_runtime() or 'this system'}"
+    return "Not supported on this system"
 
 
 def start_background_task(

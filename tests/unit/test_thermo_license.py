@@ -7,7 +7,12 @@ from pathlib import Path
 
 import pytest
 from rawtrace_qc import environment
-from rawtrace_qc.errors import ThermoHelperLicenseError, ThermoHelperNotFoundError, UnsupportedPlatformError
+from rawtrace_qc.errors import (
+    ThermoHelperConfigError,
+    ThermoHelperLicenseError,
+    ThermoHelperNotFoundError,
+    UnsupportedPlatformError,
+)
 from rawtrace_qc.thermo import accept_thermo_license, get_thermo_license_text, managed_thermo_helper_directory
 from tests.support.mock_helper import MockThermoHelper, create_mock_helper_file
 from tests.support.thermo_helper import WIN_X64_SPECIFICATION
@@ -88,9 +93,9 @@ class TestAcceptThermoLicense:
         assert mock_runner.license_accepted is True
         assert mock_runner.commands_run == [
             [str(executable.resolve()), "--version"],
-            [str(executable.resolve())],
+            [str(executable.resolve()), "--license-status"],
             [str(executable.resolve()), "--agree-to-terms"],
-            [str(executable.resolve())],
+            [str(executable.resolve()), "--license-status"],
         ]
 
     def test_raises_when_helper_exits_abnormally(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -124,8 +129,20 @@ class TestAcceptThermoLicense:
 
         assert mock_runner.commands_run == [
             [str(executable.resolve()), "--version"],
-            [str(executable.resolve())],
+            [str(executable.resolve()), "--license-status"],
         ]
+
+    def test_raises_config_error_when_acceptance_cannot_use_the_license_folder(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        executable = create_mock_helper_file(tmp_path)
+        mock_runner = MockThermoHelper(agreement_exit_code=5)
+        monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
+
+        with pytest.raises(ThermoHelperConfigError):
+            accept_thermo_license(executable)
+
+        assert mock_runner.license_accepted is False
 
 
 class TestUnsupportedRuntime:
@@ -136,9 +153,9 @@ class TestUnsupportedRuntime:
         mock_runner = MockThermoHelper()
         monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
         monkeypatch.setattr(environment, "get_platform", lambda: "linux")
-        monkeypatch.setattr(environment, "get_machine", lambda: "x86_64")
+        monkeypatch.setattr(environment, "get_machine", lambda: "riscv64")
 
-        with pytest.raises(UnsupportedPlatformError, match="'linux-x64'"):
+        with pytest.raises(UnsupportedPlatformError, match="'riscv64'"):
             operation()
 
         assert mock_runner.commands_run == []

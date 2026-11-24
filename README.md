@@ -12,7 +12,9 @@ rawtrace-qc creates interactive HTML reports from mass spectrometry raw files, s
 
 ## Install
 
-You need Windows to use the desktop application in this release. We recommend [uv](https://docs.astral.sh/uv/getting-started/installation/) because it installs rawtrace-qc in a separate environment and downloads a suitable Python version if necessary:
+rawtrace-qc runs on Windows, Linux, and macOS. We test the desktop application by hand on Windows and Linux, and on macOS only with automated tests.
+
+We recommend [uv](https://docs.astral.sh/uv/getting-started/installation/) because it installs rawtrace-qc in a separate environment and downloads a suitable Python version if necessary:
 
 ```bash
 uv tool install "rawtrace-qc[gui]"
@@ -34,6 +36,8 @@ rawtrace-qc-gui
 
 To read `.raw` files, rawtrace-qc uses a separate program from us called the Thermo tool (`ThermoScanHeaderExtractor`). This program has its own license from Thermo, so you install it and accept the license yourself. You can skip this section if you only use Bruker `.d` folders.
 
+The Thermo tool runs on Windows, on Linux with glibc (for example Ubuntu, Debian, or Fedora, but not Alpine Linux), and on macOS 14 or later.
+
 1. Click the wrench button at the top right of the application. A dot on this button shows that the setup is not complete.
 2. Click **Download**.
 3. Click **Show license** to read the terms.
@@ -41,6 +45,8 @@ To read `.raw` files, rawtrace-qc uses a separate program from us called the The
 5. Click **Close**.
 
 If your computer has no internet access, use another computer to download the ZIP file that the window names. Then copy the file to your computer and click **Install from ZIP** instead of **Download**.
+
+On macOS, if you extract the Thermo tool by hand instead of installing it with rawtrace-qc, remove the quarantine flag before you use it: `xattr -d com.apple.quarantine <path>`.
 
 ![Installing the Thermo tool and accepting its license in rawtrace-qc](https://raw.githubusercontent.com/maxperutzlabs-ms/rawtrace-qc/media/docs/screenshots/gui-setup-thermo-tool-v1.gif)
 
@@ -77,8 +83,6 @@ To compare runs against one specific run, select it as the **Reference trace**. 
 
 This release has the following limitations, which we will address in upcoming releases:
 
-- **Desktop application:** The desktop application runs only on Windows. We plan to add support for Linux and macOS.
-- **Thermo files:** You can read `.raw` files only on Windows for now. Although the Thermo tool itself is cross-platform, rawtrace-qc does not yet use it on other systems.
 - **Command line:** The command-line interface cannot create reports yet, although it can extract traces.
 - **MS2 traces:** The reports include MS2 traces, but these traces are not very useful yet. We are working on a better way to show MS2 data.
 - **FAIMS:** rawtrace-qc splits a FAIMS run into one trace for each compensation voltage (CV). This split is not optimal, and a combined view is not available yet.

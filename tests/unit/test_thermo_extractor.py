@@ -111,7 +111,7 @@ class TestThermoExtractorUnit:
             extractor.extract(raw_file)
 
         assert not runner_called
-        assert [command[1:] for command in helper_process.commands_run] == [["--version"], []]
+        assert [command[1:] for command in helper_process.commands_run] == [["--version"], ["--license-status"]]
 
     def test_empty_selection_creates_nothing_without_invoking_runner_or_locator(
         self,
@@ -405,7 +405,7 @@ class TestThermoExtractorUnit:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr(environment, "get_platform", lambda: "linux")
+        monkeypatch.setattr(environment, "get_platform", lambda: "freebsd")
         monkeypatch.setattr(environment, "get_machine", lambda: "AMD64")
         raw_file = tmp_path / "sample.raw"
         raw_file.touch()

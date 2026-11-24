@@ -19,6 +19,7 @@ from rawtrace_qc.discovery import (
 )
 from rawtrace_qc.errors import (
     ConfigurationError,
+    ThermoHelperConfigError,
     ThermoHelperError,
     ThermoHelperLicenseError,
     ThermoHelperNotFoundError,
@@ -215,6 +216,11 @@ def _thermo_helper_error() -> Exception | None:
 
 
 def _status_error(status: ThermoHelperStatus) -> ThermoHelperError:
+    if (
+        status.state is ThermoHelperState.UNLICENSED
+        and status.license_marker_path is None
+    ):
+        return ThermoHelperConfigError(status.message)
     error_types: dict[ThermoHelperState, type[ThermoHelperError]] = {
         ThermoHelperState.NOT_INSTALLED: ThermoHelperNotFoundError,
         ThermoHelperState.UNLICENSED: ThermoHelperLicenseError,

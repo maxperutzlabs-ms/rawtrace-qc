@@ -6,10 +6,11 @@ from pathlib import Path
 
 from cyclopts import App
 
-from rawtrace_qc.cli.errors import print_cli_error
+from rawtrace_qc.cli.errors import THERMO_CONFIG_HINT, print_cli_error
 from rawtrace_qc.errors import ThermoHelperError
 from rawtrace_qc.thermo import (
     ThermoHelperState,
+    ThermoHelperStatus,
     accept_thermo_license,
     get_thermo_helper_status,
     get_thermo_license_text,
@@ -42,7 +43,7 @@ def status(
     print(helper_status.message)
     if helper_status.is_ready:
         return 0
-    print(_status_action(helper_status.state))
+    print(_status_action(helper_status))
     return 1
 
 
@@ -118,7 +119,12 @@ def accept_license(
     return 0
 
 
-def _status_action(state: ThermoHelperState) -> str:
+def _status_action(helper_status: ThermoHelperStatus) -> str:
+    if (
+        helper_status.state is ThermoHelperState.UNLICENSED
+        and helper_status.license_marker_path is None
+    ):
+        return THERMO_CONFIG_HINT
     actions = {
         ThermoHelperState.NOT_INSTALLED: (
             "Install it with `rawtrace-qc thermo install`; use `--from-zip PATH` "
@@ -137,4 +143,4 @@ def _status_action(state: ThermoHelperState) -> str:
         ),
         ThermoHelperState.READY: "",
     }
-    return actions[state]
+    return actions[helper_status.state]

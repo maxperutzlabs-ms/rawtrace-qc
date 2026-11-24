@@ -16,11 +16,12 @@ from rawtrace_qc.thermo.specification import THERMO_HELPER_RELEASE
 class MockThermoHelper:
     """Mock runner that mimics the ThermoScanHeaderExtractor contract.
 
-    Supports version queries, an in-memory license state that a bare invocation
-    reports (exit code 4 when not accepted, usage exit code 1 when accepted) and
-    `--agree-to-terms` sets, and configurable failure modes (exit code,
-    empty/garbage stdout, timeouts, or execution errors). Nothing is written to
-    disk, so tests never touch the real user's license state.
+    Supports version queries, an in-memory license state that `--license-status`
+    reports (exit code 0 when accepted, 4 when not, with the marker path on
+    stdout) and `--agree-to-terms` sets, and configurable failure modes (exit
+    code, empty/garbage stdout, timeouts, or execution errors). A call without
+    arguments exits with the usage code 1. Nothing is written to disk, so tests
+    never touch the real user's license state.
     """
 
     version: str = THERMO_HELPER_RELEASE.version
@@ -32,6 +33,8 @@ class MockThermoHelper:
     license_text: str = "Mock Thermo license terms.\n"
     license_text_exit_code: int | None = None
     agreement_exit_code: int | None = None
+    license_status_exit_code: int | None = None
+    license_marker_path: str = "/mock-config/.thermo-license-accepted"
     license_accepted: bool = False
     records_acceptance: bool = True
     commands_run: list[list[str]] = field(default_factory=list)
@@ -52,14 +55,20 @@ class MockThermoHelper:
             command_exit_code = self.license_text_exit_code
         elif "--agree-to-terms" in str_args and self.agreement_exit_code is not None:
             command_exit_code = self.agreement_exit_code
+        elif "--license-status" in str_args and self.license_status_exit_code is not None:
+            command_exit_code = self.license_status_exit_code
 
-        if len(str_args) == 1 and command_exit_code == 0 and self.stdout is None:
-            if self.license_accepted:
-                return subprocess.CompletedProcess(
-                    args=str_args, returncode=1, stdout="", stderr="Usage: ThermoScanHeaderExtractor <input.raw>\n"
-                )
+        if len(str_args) == 1:
             return subprocess.CompletedProcess(
-                args=str_args, returncode=4, stdout="", stderr="ERROR: Thermo license terms have not been accepted.\n"
+                args=str_args, returncode=1, stdout="", stderr="Usage: ThermoScanHeaderExtractor <input.raw>\n"
+            )
+
+        if "--license-status" in str_args and command_exit_code == 0:
+            return subprocess.CompletedProcess(
+                args=str_args,
+                returncode=0 if self.license_accepted else 4,
+                stdout=f"{self.license_marker_path}\n" if self.stdout is None else self.stdout,
+                stderr=self.stderr,
             )
 
         stdout = self.stdout

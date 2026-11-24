@@ -5,7 +5,13 @@ from pathlib import Path
 
 import pytest
 from rawtrace_qc.discovery import DiscoveryIssue, DiscoveryOptions, SkipReason, Vendor
-from rawtrace_qc.errors import ConfigurationError, ThermoHelperNotFoundError
+from rawtrace_qc.errors import (
+    ConfigurationError,
+    ThermoHelperConfigError,
+    ThermoHelperError,
+    ThermoHelperLicenseError,
+    ThermoHelperNotFoundError,
+)
 from rawtrace_qc.extractors import BrukerExtractor, ThermoExtractor
 from rawtrace_qc.models import ExtractionResult
 from rawtrace_qc.thermo import ThermoHelperState, ThermoHelperStatus
@@ -181,6 +187,32 @@ class TestExtractBatch:
         assert result.outcomes[1].status is ExtractionOutcomeStatus.SUCCEEDED
         assert thermo.calls == []
         assert len(bruker.calls) == 1
+
+    @pytest.mark.parametrize(
+        ("marker_path", "error_type"),
+        [(Path("config/.thermo-license-accepted"), ThermoHelperLicenseError), (None, ThermoHelperConfigError)],
+    )
+    def test_unlicensed_helper_error_depends_on_the_marker_path(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        marker_path: Path | None,
+        error_type: type[ThermoHelperError],
+    ) -> None:
+        raw_file = _create_raw(tmp_path / "sample.raw")
+        status = ThermoHelperStatus(
+            state=ThermoHelperState.UNLICENSED,
+            path=Path("ThermoScanHeaderExtractor.exe"),
+            version="0.1.0",
+            license_accepted=False,
+            message="Helper is not licensed.",
+            license_marker_path=marker_path,
+        )
+        monkeypatch.setattr(workflow_module, "get_thermo_helper_status", lambda: status)
+
+        result = extract_batch([raw_file], discovery_options=_discovery_options())
+
+        assert type(result.outcomes[0].error) is error_type
 
     def test_failed_candidate_does_not_abort_later_candidates(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

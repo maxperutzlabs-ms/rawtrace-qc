@@ -25,6 +25,7 @@ from rawtrace_qc.errors import (
     UnsupportedPlatformError,
 )
 from rawtrace_qc.thermo import (
+    THERMO_HELPER_RELEASE,
     download_thermo_helper_archive,
     extract_thermo_helper_archive,
     install_thermo_helper,
@@ -60,9 +61,7 @@ def _create_archive(
 def _create_tar_archive(
     directory: Path, members: dict[str, bytes] | None = None, *, symlinks: tuple[str, ...] = ()
 ) -> tuple[Path, ThermoHelperSpecification]:
-    specification = replace(
-        WIN_X64_SPECIFICATION, runtime="linux-x64", archive_format="tar.gz", executable_name="ThermoScanHeaderExtractor"
-    )
+    specification = THERMO_HELPER_RELEASE.specification("linux-x64")
     archive_path = directory / "helper.tar.gz"
     archive_members = members or {specification.executable_name: b"ELFmock-helper", "LICENSE.txt": b"license"}
     with tarfile.open(archive_path, "w:gz") as archive:
@@ -92,10 +91,10 @@ def _assert_no_staging_directories(data_directory: Path, specification: ThermoHe
 
 class TestInstallThermoHelper:
     def test_rejects_unsupported_runtime(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(environment, "get_platform", lambda: "linux")
+        monkeypatch.setattr(environment, "get_platform", lambda: "freebsd")
         monkeypatch.setattr(environment, "get_machine", lambda: "AMD64")
 
-        with pytest.raises(UnsupportedPlatformError, match=r"'linux-x64'.*\['win-x64'\]"):
+        with pytest.raises(UnsupportedPlatformError, match="'freebsd'"):
             install_thermo_helper()
 
     def test_installs_local_archive_atomically_without_accepting_license(self, tmp_path: Path) -> None:
@@ -128,7 +127,7 @@ class TestInstallThermoHelper:
 
         executable = install_thermo_helper(archive_path, data_directory=data_directory, specification=specification)
 
-        expected_directory = data_directory / "tools" / "thermoscanheaderextractor" / "0.2.0" / "win-x64"
+        expected_directory = data_directory / "tools" / "thermoscanheaderextractor" / specification.version / "win-x64"
         assert executable == expected_directory.resolve() / specification.executable_name
 
     def test_writes_runtime_into_install_manifest(self, tmp_path: Path) -> None:

@@ -25,7 +25,7 @@ class TestThermoStatusCommand:
             ("not_installed", None, False, "win32", 1, "thermo install"),
             ("unlicensed", WIN_X64_SPECIFICATION.version, False, "win32", 1, "thermo accept-license"),
             ("invalid_version", "9.9.9", True, "win32", 1, "thermo install --overwrite"),
-            ("unsupported_platform", None, False, "linux", 1, "not supported on this system"),
+            ("unsupported_platform", None, False, "freebsd", 1, "not supported on this system"),
             ("ready", WIN_X64_SPECIFICATION.version, True, "win32", 0, "is ready"),
         ],
     )
@@ -59,8 +59,24 @@ class TestThermoStatusCommand:
         if helper is None or platform != "win32":
             assert mock_helper.commands_run == []
         else:
-            expected_commands = [["--version"]] if state == "invalid_version" else [["--version"], []]
+            expected_commands = [["--version"]] if state == "invalid_version" else [["--version"], ["--license-status"]]
             assert [command[1:] for command in mock_helper.commands_run] == expected_commands
+
+    def test_status_points_to_the_license_folder_when_the_helper_cannot_use_it(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        data_directory = tmp_path / "appdata"
+        _create_helper(data_directory)
+        monkeypatch.setattr(environment, "get_platform", lambda: "win32")
+        monkeypatch.setattr(environment, "get_machine", lambda: "AMD64")
+        monkeypatch.setattr(locator_module, "execute_helper_process", MockThermoHelper(license_status_exit_code=5))
+
+        result = main(["thermo", "status", "--data-directory", str(data_directory)])
+
+        output = capsys.readouterr().out
+        assert result == 1
+        assert "license folder" in output
+        assert "accept-license" not in output
 
     def test_status_reports_missing_helper_path_without_using_managed_helper(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -224,9 +240,9 @@ class TestThermoSetupCommands:
             ["--version"],
             ["--thermo-license"],
             ["--version"],
-            [],
+            ["--license-status"],
             ["--agree-to-terms"],
-            [],
+            ["--license-status"],
         ]
         assert mock_helper.license_accepted is True
 

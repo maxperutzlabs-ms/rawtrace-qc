@@ -6,7 +6,7 @@ This directory contains a small real Thermo Orbitrap Exploris 480 acquisition fi
 
 - **Instrument Model:** Thermo Orbitrap Exploris 480
 - **Serial Number / Source ID:** `MA10459C_20260930114656`
-- **Acquisition Start Time:** `2026-09-30T11:46:56Z` (ISO-8601 UTC)
+- **Acquisition Start Time:** `2026-09-30T11:46:56` (ISO-8601, local clock time of the acquisition computer, no time zone)
 - **Experiment Type:** Data-Independent Acquisition (DIA), 3 cycles
 - **FAIMS:** None (no FAIMS compensation voltage)
 
@@ -25,7 +25,7 @@ When extracted with `ThermoScanHeaderExtractor` (or `ThermoExtractor`), the extr
   - `row_granularity`: `spectrum`
   - `source_filename`: `exploris480_ms1_dia_3cycles.raw`
   - `source_id`: `MA10459C_20260930114656`
-  - `acquisition_start_time`: `2026-09-30T11:46:56Z`
+  - `acquisition_start_time`: `2026-09-30T11:46:56`
 
 ### MSn Trace (`<stem>.msn-trace.parquet`)
 - **Number of scans / rows:** 36
@@ -40,4 +40,4 @@ When extracted with `ThermoScanHeaderExtractor` (or `ThermoExtractor`), the extr
   - `row_granularity`: `spectrum`
   - `source_filename`: `exploris480_ms1_dia_3cycles.raw`
   - `source_id`: `MA10459C_20260930114656`
-  - `acquisition_start_time`: `2026-09-30T11:46:56Z`
+  - `acquisition_start_time`: `2026-09-30T11:46:56`
