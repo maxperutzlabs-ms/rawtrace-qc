@@ -9,10 +9,8 @@ import pytest
 from rawtrace_qc import environment
 from rawtrace_qc.errors import (
     ThermoHelperCommandError,
-    ThermoHelperConfigError,
     ThermoHelperError,
     ThermoHelperExecutionError,
-    ThermoHelperLicenseError,
     ThermoHelperNotFoundError,
     ThermoHelperOutputError,
     ThermoHelperTimeoutError,
@@ -158,40 +156,6 @@ class TestGetThermoHelperStatus:
         assert str(expected_path / WIN_X64_SPECIFICATION.executable_name) in status.message
         assert expected_path.name == "win-x64"
 
-    def test_returns_unlicensed_state_when_version_matches_but_helper_reports_license_not_accepted(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        exe = create_mock_helper_file(tmp_path)
-        mock_runner = MockThermoHelper(version=WIN_X64_SPECIFICATION.version)
-        monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
-
-        status = get_thermo_helper_status(exe)
-
-        assert status.state is ThermoHelperState.UNLICENSED
-        assert status.path == exe.resolve()
-        assert status.version == WIN_X64_SPECIFICATION.version
-        assert not status.license_accepted
-        assert not status.is_ready
-        assert status.license_marker_path == Path(mock_runner.license_marker_path)
-        assert "has not been accepted" in status.message
-
-    def test_returns_ready_state_when_version_matches_and_helper_reports_license_accepted(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        exe = create_mock_helper_file(tmp_path)
-        mock_runner = MockThermoHelper(version=WIN_X64_SPECIFICATION.version, license_accepted=True)
-        monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
-
-        status = get_thermo_helper_status(exe)
-
-        assert status.state is ThermoHelperState.READY
-        assert status.path == exe.resolve()
-        assert status.version == WIN_X64_SPECIFICATION.version
-        assert status.license_accepted
-        assert status.is_ready
-        assert status.license_marker_path == Path(mock_runner.license_marker_path)
-        assert "is ready" in status.message
-
     def test_returns_invalid_version_state_when_helper_reports_different_version(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -209,19 +173,16 @@ class TestGetThermoHelperStatus:
         assert "reported version '0.1.0'" in status.message
         assert [command[1:] for command in mock_runner.commands_run] == [["--version"]]
 
-    @pytest.mark.parametrize(
-        ("exit_code", "state"), [(5, ThermoHelperState.UNLICENSED), (7, ThermoHelperState.INVALID_VERSION)]
-    )
-    def test_reports_failed_license_query_without_marker_path(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, exit_code: int, state: ThermoHelperState
+    def test_reports_failed_license_query_as_invalid_version_without_marker_path(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         exe = create_mock_helper_file(tmp_path)
-        mock_runner = MockThermoHelper(license_status_exit_code=exit_code, stderr="no config dir")
+        mock_runner = MockThermoHelper(license_status_exit_code=7, stderr="no config dir")
         monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
 
         status = get_thermo_helper_status(exe)
 
-        assert status.state is state
+        assert status.state is ThermoHelperState.INVALID_VERSION
         assert not status.license_accepted
         assert status.license_marker_path is None
         assert "no config dir" in status.message
@@ -298,26 +259,6 @@ class TestLocateThermoHelper:
         with pytest.raises(ThermoHelperNotFoundError, match="executable was not found"):
             locate_thermo_helper()
 
-    def test_raises_thermo_helper_license_error_when_license_not_accepted(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        exe = create_mock_helper_file(tmp_path)
-        mock_runner = MockThermoHelper(version=WIN_X64_SPECIFICATION.version)
-        monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
-
-        with pytest.raises(ThermoHelperLicenseError, match="license agreement has not been accepted"):
-            locate_thermo_helper(exe)
-
-    def test_raises_thermo_helper_config_error_when_license_folder_is_unusable(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        exe = create_mock_helper_file(tmp_path)
-        mock_runner = MockThermoHelper(license_status_exit_code=5)
-        monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
-
-        with pytest.raises(ThermoHelperConfigError, match="license folder"):
-            locate_thermo_helper(exe)
-
     def test_raises_thermo_helper_version_error_when_version_mismatched(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -337,15 +278,6 @@ class TestLocateThermoHelper:
 
         with pytest.raises(ThermoHelperVersionError, match="exit code 1"):
             locate_thermo_helper(exe)
-
-    def test_returns_executable_path_when_ready(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        exe = create_mock_helper_file(tmp_path)
-        mock_runner = MockThermoHelper(version=WIN_X64_SPECIFICATION.version, license_accepted=True)
-        monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
-
-        result = locate_thermo_helper(exe)
-
-        assert result == exe.resolve()
 
     def test_raises_not_found_for_missing_explicit_path_without_using_managed_install(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -455,20 +387,6 @@ class TestQueryHelperVersion:
 
 
 class TestQueryLicenseStatus:
-    @pytest.mark.parametrize("accepted", [True, False])
-    def test_reports_license_state_and_marker_path(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, accepted: bool
-    ) -> None:
-        exe = create_mock_helper_file(tmp_path)
-        mock_runner = MockThermoHelper(license_accepted=accepted)
-        monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
-
-        license_status = query_license_status(exe)
-
-        assert license_status.accepted is accepted
-        assert license_status.marker_path == Path(mock_runner.license_marker_path)
-        assert mock_runner.commands_run == [[str(exe), "--license-status"]]
-
     def test_strips_only_the_windows_line_ending(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         exe = create_mock_helper_file(tmp_path)
         mock_runner = MockThermoHelper(stdout="C:/My Config /.thermo-license-accepted\r\n")
@@ -479,7 +397,6 @@ class TestQueryLicenseStatus:
     @pytest.mark.parametrize(
         ("helper_options", "error_type"),
         [
-            ({"license_status_exit_code": 5}, ThermoHelperConfigError),
             ({"license_status_exit_code": 7}, ThermoHelperCommandError),
             ({"stdout": ""}, ThermoHelperOutputError),
             ({"stdout": "first\nsecond\n"}, ThermoHelperOutputError),
@@ -487,7 +404,7 @@ class TestQueryLicenseStatus:
             ({"hang": True}, ThermoHelperTimeoutError),
             ({"os_error": OSError("Access denied")}, ThermoHelperExecutionError),
         ],
-        ids=["exit-5", "exit-7", "empty", "two-lines", "not-utf8", "timeout", "os-error"],
+        ids=["exit-7", "empty", "two-lines", "not-utf8", "timeout", "os-error"],
     )
     def test_raises_specific_error_when_the_state_cannot_be_read(
         self,

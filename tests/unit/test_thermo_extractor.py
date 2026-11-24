@@ -28,6 +28,7 @@ from rawtrace_qc.errors import (
 from rawtrace_qc.extractors import BrukerExtractor, ThermoExtractor
 from rawtrace_qc.thermo import locator as locator_module
 from rawtrace_qc.thermo import thermo_config_directory
+from rawtrace_qc.thermo.runner import THERMO_CONFIG_DIRECTORY_VARIABLE
 from rawtrace_qc.traces import load_trace, write_trace
 from tests.support.mock_helper import MockThermoHelper, create_mock_helper_file
 
@@ -262,6 +263,27 @@ class TestThermoExtractorUnit:
             ThermoExtractor().extract(raw_file, output_directory=tmp_path / "output")
 
         assert type(error.value) is expected
+
+    def test_license_folder_error_names_the_folder_of_the_variable(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        raw_file = tmp_path / "sample.raw"
+        raw_file.touch()
+        monkeypatch.setenv(THERMO_CONFIG_DIRECTORY_VARIABLE, str(tmp_path / "user-config"))
+        monkeypatch.setattr(
+            "rawtrace_qc.extractors.thermo.locate_thermo_helper",
+            lambda *args, **kwargs: Path("mock.exe"),
+        )
+
+        def mock_runner(command, **kwargs):
+            raise ThermoHelperCommandError("config", returncode=5, stdout="", stderr="")
+
+        monkeypatch.setattr("rawtrace_qc.extractors.thermo.run_thermo_helper", mock_runner)
+
+        with pytest.raises(ThermoHelperConfigError) as error:
+            ThermoExtractor().extract(raw_file, output_directory=tmp_path / "output")
+
+        assert str(tmp_path / "user-config") in str(error.value)
 
     def test_runner_success_with_invalid_output_content_is_caught_by_validation(
         self,

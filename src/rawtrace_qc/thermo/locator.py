@@ -528,10 +528,13 @@ def query_license_status(
     if result.returncode == _LICENSE_CONFIG_ERROR_EXIT_CODE:
         stderr_sample = result.stderr.strip()
         detail = f" Helper message: {stderr_sample}" if stderr_sample else ""
+        license_folder = thermo_helper_environment(config_directory)[
+            THERMO_CONFIG_DIRECTORY_VARIABLE
+        ]
         raise ThermoHelperConfigError(
-            f"ThermoScanHeaderExtractor at {executable_path} could not determine "
-            f"its license folder. If {THERMO_CONFIG_DIRECTORY_VARIABLE} is set, it "
-            f"must be the absolute path of a folder.{detail}"
+            f"ThermoScanHeaderExtractor at {executable_path} could not use its "
+            f"license folder {license_folder}. If {THERMO_CONFIG_DIRECTORY_VARIABLE} "
+            f"is set, it must be the absolute path of a folder.{detail}"
         )
     if result.returncode not in (
         _LICENSE_ACCEPTED_EXIT_CODE,

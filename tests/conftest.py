@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterator
 from contextlib import closing
 from pathlib import Path
 
@@ -20,8 +21,21 @@ def _expire_stale_thermo_cache() -> None:
     expire_stale_test_cache()
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _isolate_thermo_license(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
+    """Point the Thermo helper at a temporary license folder for the whole test session.
+
+    Sets `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR` to this folder before any test runs, so no test reads or changes
+    the acceptance file of the developer or of the CI runner.
+    """
+    config_directory = tmp_path_factory.mktemp("thermo-config")
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setenv(THERMO_CONFIG_DIRECTORY_VARIABLE, str(config_directory))
+        yield config_directory
+
+
 @pytest.fixture(scope="session")
-def thermo_helper_executable() -> Path:
+def thermo_helper_executable(_isolate_thermo_license: Path) -> Path:
     return resolve_integration_thermo_helper()
 
 
@@ -31,6 +45,13 @@ def isolated_data_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr("rawtrace_qc.environment.user_data_dir", lambda **_kwargs: str(data_directory))
     monkeypatch.delenv(THERMO_CONFIG_DIRECTORY_VARIABLE, raising=False)
     return data_directory
+
+
+@pytest.fixture
+def isolated_thermo_config(isolated_data_directory: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    config_directory = tmp_path / "thermo-config"
+    monkeypatch.setenv(THERMO_CONFIG_DIRECTORY_VARIABLE, str(config_directory))
+    return config_directory
 
 
 @pytest.fixture

@@ -1,11 +1,4 @@
-"""Integration tests for the Thermo CLI commands against a real helper binary.
-
-These tests require that the current user has already accepted the Thermo
-license terms; otherwise the `thermo_helper_executable` fixture skips them. The
-helper records acceptance per user, so the unaccepted state and the first-time
-acceptance flow cannot be exercised here without changing the user's real
-license state; they are covered by unit tests with a mocked helper.
-"""
+"""Integration tests for the Thermo CLI commands against a real helper binary."""
 
 from __future__ import annotations
 

@@ -12,6 +12,10 @@ from rawtrace_qc.errors import (
 )
 from rawtrace_qc.thermo import locator
 from rawtrace_qc.thermo.paths import thermo_config_directory
+from rawtrace_qc.thermo.runner import (
+    THERMO_CONFIG_DIRECTORY_VARIABLE,
+    thermo_helper_environment,
+)
 from rawtrace_qc.thermo.specification import (
     ThermoHelperSpecification,
     resolve_thermo_helper_specification,
@@ -188,10 +192,13 @@ def _run_license_command(
     stderr_sample = result.stderr.strip()
     detail = f": {stderr_sample}" if stderr_sample else ""
     if result.returncode == _CONFIG_ERROR_EXIT_CODE:
+        license_folder = thermo_helper_environment(config_directory)[
+            THERMO_CONFIG_DIRECTORY_VARIABLE
+        ]
         raise ThermoHelperConfigError(
             f"ThermoScanHeaderExtractor at {executable} could not use its license "
-            f"folder while attempting to {action}{detail}. Check that the folder "
-            "is writable."
+            f"folder {license_folder} while attempting to {action}{detail}. Check "
+            "that the folder is writable."
         )
     if result.returncode != 0:
         raise ThermoHelperLicenseError(

@@ -13,20 +13,8 @@ from rawtrace_qc import environment
 from rawtrace_qc.errors import (
     ThermoHelperChecksumError,
     ThermoHelperDownloadError,
-    ThermoHelperLicenseError,
 )
-from rawtrace_qc.thermo import ThermoHelperState, ThermoHelperStatus
 from tests.support import thermo_helper as resolver
-
-
-def _status(state: ThermoHelperState, path: Path | None = None) -> ThermoHelperStatus:
-    return ThermoHelperStatus(
-        state=state,
-        path=path,
-        version=resolver.WIN_X64_SPECIFICATION.version,
-        license_accepted=state is ThermoHelperState.READY,
-        message=f"status: {state.value}",
-    )
 
 
 def _archive_specification(payload: bytes) -> resolver.ThermoHelperSpecification:
@@ -173,21 +161,6 @@ class TestResolveIntegrationThermoHelper:
         monkeypatch.setattr(environment, "get_platform", lambda: "win32")
         monkeypatch.setattr(environment, "get_machine", lambda: "AMD64")
 
-    def test_uses_ready_per_user_helper_without_touching_fallback(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        executable = tmp_path / "user" / "ThermoScanHeaderExtractor.exe"
-        monkeypatch.setattr(
-            resolver, "get_thermo_helper_status", lambda **kwargs: _status(ThermoHelperState.READY, executable)
-        )
-        monkeypatch.setattr(resolver, "get_or_download_thermo_helper_archive", pytest.fail)
-        monkeypatch.setattr(resolver, "locate_thermo_helper", pytest.fail)
-
-        result = resolver.resolve_integration_thermo_helper(cache_root=tmp_path / "cache")
-
-        assert result == executable
-        assert not (tmp_path / "cache").exists()
-
     def test_extracts_the_archive_into_the_cache_once_and_reuses_it(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -198,11 +171,8 @@ class TestResolveIntegrationThermoHelper:
             downloads.append(kwargs)
             return archive_path
 
-        monkeypatch.setattr(
-            resolver, "get_thermo_helper_status", lambda **kwargs: _status(ThermoHelperState.NOT_INSTALLED)
-        )
         monkeypatch.setattr(resolver, "get_or_download_thermo_helper_archive", get_archive)
-        monkeypatch.setattr(resolver, "locate_thermo_helper", lambda explicit_path, **kwargs: explicit_path)
+        monkeypatch.setattr(resolver, "accept_thermo_license", lambda explicit_path, **kwargs: None)
 
         first = resolver.resolve_integration_thermo_helper(specification, cache_root=tmp_path / "cache")
         second = resolver.resolve_integration_thermo_helper(specification, cache_root=tmp_path / "cache")
@@ -212,29 +182,6 @@ class TestResolveIntegrationThermoHelper:
         assert first.read_bytes() == b"MZmock-helper"
         assert len(downloads) == 1
 
-    def test_checks_the_cached_helper_by_explicit_path_and_skips_without_accepting_when_unlicensed(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        archive_path, specification = _helper_archive(tmp_path)
-        located: list[tuple[Path, dict[str, object]]] = []
-
-        def locate_unlicensed(explicit_path: Path, **kwargs: object) -> Path:
-            located.append((explicit_path, kwargs))
-            raise ThermoHelperLicenseError("The Thermo license agreement has not been accepted.")
-
-        monkeypatch.setattr(
-            resolver, "get_thermo_helper_status", lambda **kwargs: _status(ThermoHelperState.UNLICENSED)
-        )
-        monkeypatch.setattr(resolver, "get_or_download_thermo_helper_archive", lambda **kwargs: archive_path)
-        monkeypatch.setattr(resolver, "locate_thermo_helper", locate_unlicensed)
-
-        with pytest.raises(pytest.skip.Exception, match="thermo accept-license"):
-            resolver.resolve_integration_thermo_helper(specification, cache_root=tmp_path / "cache")
-
-        [(explicit_path, kwargs)] = located
-        assert explicit_path.read_bytes() == b"MZmock-helper"
-        assert kwargs == {"specification": specification}
-
     def test_skips_transient_http_download_failure(
         self,
         tmp_path: Path,
@@ -242,9 +189,6 @@ class TestResolveIntegrationThermoHelper:
     ) -> None:
         download_error = ThermoHelperDownloadError("Temporary release outage.")
         download_error.__cause__ = HTTPError("https://example.test/helper.zip", 503, "Unavailable", None, None)
-        monkeypatch.setattr(
-            resolver, "get_thermo_helper_status", lambda **kwargs: _status(ThermoHelperState.NOT_INSTALLED)
-        )
 
         def fail_download(
             _destination: Path, *, specification: resolver.ThermoHelperSpecification, timeout: float
@@ -261,9 +205,6 @@ class TestResolveIntegrationThermoHelper:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr(
-            resolver, "get_thermo_helper_status", lambda **kwargs: _status(ThermoHelperState.NOT_INSTALLED)
-        )
         monkeypatch.setattr(
             resolver,
             "get_or_download_thermo_helper_archive",

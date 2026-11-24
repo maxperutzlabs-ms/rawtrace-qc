@@ -115,12 +115,9 @@ jobs:
     - name: Install dependencies
       run: uv sync --locked --all-extras
 
-    # Accepting the license here is intentional so the Thermo integration tests
-    # run instead of being skipped.
-    - name: Install Thermo helper and accept license
-      run: |
-        uv run rawtrace-qc thermo install
-        uv run rawtrace-qc thermo accept-license
-
+    # The tests accept the Thermo license only in temporary folders. The
+    # variable keeps any other helper call away from the runner's profile.
     - name: Run tests
+      env:
+        THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR: ${{ runner.temp }}/thermo-config
       run: uv run pytest --cov --cov-report=term

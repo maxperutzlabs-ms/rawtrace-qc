@@ -7,7 +7,7 @@ This document is for developers and AI agents who change rawtrace-qc. It describ
 Follow these rules first, because the rest of the design depends on them:
 
 - **Put behavior in the library.** The GUI and the CLI present results to the user. Filesystem traversal, vendor rules, validation, and error classification belong in the library, so that all clients behave in the same way.
-- **Never accept the Thermo license for the user.** Extraction and installation must not accept it. Tests must not run `--agree-to-terms` against the real helper, because acceptance applies to the whole user account.
+- **Never accept the Thermo license for the user.** Only an explicit user action accepts it: `accept_thermo_license()`, `rawtrace-qc thermo accept-license`, or the **Accept license** button. Extraction and installation never accept it. Tests accept it with the real helper, but only in temporary folders (see [Testing](#testing)).
 - **Validate every trace artifact.** Producers and consumers use the contract in `rawtrace_qc.traces`, so an invalid artifact fails with `ArtifactValidationError`.
 - **Keep optional dependencies optional.** The core package must import without Cyclopts and without PySide6.
 - **Do not guess scientific meaning.** For example, a Bruker MSn row is a frame aggregate and not one precursor spectrum.
@@ -79,7 +79,7 @@ CI in `.github/workflows/ci.yml` runs the following checks with the locked depen
 - `ruff check .` and `ruff format --check .`.
 - `pyrefly check`, which covers only `src`.
 - `pytest -m "not network" --cov` on Ubuntu with Python 3.12, 3.13, and 3.14, on Windows with Python 3.13 and 3.14, and on macOS with Python 3.14.
-- The full test suite, including the `network` tests, in a separate `test-full` job on Windows with Python 3.12. Only this job downloads and installs the Thermo helper.
+- The full test suite, including the `network` tests, in a separate `test-full` job on Windows with Python 3.12. Only this job downloads the Thermo helper. Its test step sets `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR` to a folder in the runner's temporary directory, and the job does not accept the license itself; the tests accept it in their own temporary folders.
 
 Ruff settings differ between source and tests. Source files use 88 characters and the rules `E`, `F`, `I`, `UP`, and `B`. Because `tests/ruff.toml` replaces this configuration, tests use 120 characters and the default Ruff rules.
 
@@ -106,13 +106,14 @@ Some test fixtures have special rules:
 
 - **Bruker:** The `bruker_fixture` in `tests/conftest.py` builds a small SQLite `analysis.tdf`, so these tests need no external files.
 - **Thermo:** `tests/data/thermo/exploris480_ms1_dia_3cycles.raw` is a real acquisition. Its `README.md` lists the expected output.
-- **Mock helper:** Unit tests use `MockThermoHelper`, which keeps the license state in memory and writes nothing to disk.
-- **Data folder:** `tests/unit/conftest.py` gives every unit test the `isolated_data_directory` fixture from `tests/conftest.py`. It points the application data folder at a temporary folder and removes `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR`, so unit tests never touch the real data folder or license state.
-- **Real helper:** Integration tests use the `thermo_helper_executable` fixture. It uses the managed helper if that is ready. Otherwise, it extracts the downloaded archive into `tests/.cache` and uses that helper by its explicit path, so its license is checked in the same data folder as the managed helper. The fixture skips the test on an unsupported system or if the user has not accepted the license, and it fails if the helper cannot use its license folder. A separate session fixture purges `tests/.cache` after 24 hours.
+- **License folder:** An autouse session fixture in `tests/conftest.py` sets `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR` to a temporary folder before any test runs, so no test reads or changes the license acceptance of the developer or of the CI runner. A test that needs its own license state requests `isolated_thermo_config`, which builds on `isolated_data_directory` and sets the variable to a folder in the test's `tmp_path`.
+- **Mock helper:** Unit tests use `MockThermoHelper`, which keeps the license state in memory and writes nothing to disk. Use it where the real helper cannot be used, for example in unit tests or for failures it cannot produce on demand.
+- **Data folder:** `tests/unit/conftest.py` gives every unit test the `isolated_data_directory` fixture from `tests/conftest.py`. It points the application data folder at a temporary folder and removes `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR`, so the license folder of a unit test is `thermo_config_directory()` in that temporary folder. Tests with the real helper therefore belong in `tests/integration`.
+- **Real helper:** Integration tests use the session fixture `thermo_helper_executable`. It extracts the downloaded archive into `tests/.cache`, accepts the license in the session's temporary license folder, and returns that helper, which tests pass as an explicit path. It never uses the managed helper of the user. It skips the test on an unsupported system or when the archive cannot be downloaded. A separate session fixture purges `tests/.cache` after 24 hours.
 - **Network:** Use `urlopen_or_skip()` from `tests/support/network.py`. It skips on network and proxy failures, but it fails on a missing asset.
 - **Qt:** GUI tests use `pytest.importorskip` and the `offscreen` Qt platform, so they run without a display.
 
-Integration tests with the real helper use the license state in the data folder of the user account and never accept the license. Mock tests therefore cover the unaccepted state and the acceptance flow. CI accepts the license on Windows on purpose, so that the real Thermo integration tests run there.
+`tests/integration/test_thermo_helper_integration.py` tests the license flow with the real helper.
 
 ## Code conventions
 

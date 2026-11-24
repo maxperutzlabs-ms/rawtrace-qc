@@ -28,7 +28,12 @@ from rawtrace_qc.extractors.protocol import PrecisionMode
 from rawtrace_qc.models import ExtractionResult
 from rawtrace_qc.thermo.locator import locate_thermo_helper
 from rawtrace_qc.thermo.paths import thermo_config_directory
-from rawtrace_qc.thermo.runner import build_thermo_helper_command, run_thermo_helper
+from rawtrace_qc.thermo.runner import (
+    THERMO_CONFIG_DIRECTORY_VARIABLE,
+    build_thermo_helper_command,
+    run_thermo_helper,
+    thermo_helper_environment,
+)
 from rawtrace_qc.thermo.specification import ThermoHelperSpecification
 from rawtrace_qc.traces import load_trace
 
@@ -169,18 +174,20 @@ class ThermoExtractor:
                     select_ms1=select_ms1,
                     select_msn=select_msn,
                 )
+                config_directory = thermo_config_directory(self._specification)
                 try:
                     completed = run_thermo_helper(
                         command,
                         timeout=self._timeout,
                         cancel=self._cancel,
-                        config_directory=thermo_config_directory(self._specification),
+                        config_directory=config_directory,
                     )
                 except ThermoHelperCommandError as error:
                     raise _exit_code_error(
                         error,
                         resolved_input,
                         destination_directory,
+                        config_directory,
                         select_ms1=select_ms1,
                         select_msn=select_msn,
                     ) from error
@@ -291,6 +298,7 @@ def _exit_code_error(
     error: ThermoHelperCommandError,
     path: Path,
     output_directory: Path,
+    config_directory: Path,
     *,
     select_ms1: bool,
     select_msn: bool,
@@ -313,10 +321,13 @@ def _exit_code_error(
             f"read {path.name!r}."
         )
     if code == 5:
+        license_folder = thermo_helper_environment(config_directory)[
+            THERMO_CONFIG_DIRECTORY_VARIABLE
+        ]
         return ThermoHelperConfigError(
-            "The Thermo tool could not use its license folder. Check that the "
-            "folder is writable, or THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR if you "
-            f"set it. Details: {detail}"
+            f"The Thermo tool could not use its license folder {license_folder}. "
+            "Check that the folder is writable, or "
+            f"{THERMO_CONFIG_DIRECTORY_VARIABLE} if you set it. Details: {detail}"
         )
     if code == 1:
         message = (

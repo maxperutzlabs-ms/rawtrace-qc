@@ -15,16 +15,14 @@ from rawtrace_qc.errors import (
     ThermoHelperArchiveError,
     ThermoHelperChecksumError,
     ThermoHelperDownloadError,
-    ThermoHelperLicenseError,
 )
 from rawtrace_qc.thermo import (
     THERMO_HELPER_RELEASE,
     ThermoHelperSpecification,
+    accept_thermo_license,
     download_thermo_helper_archive,
     extract_thermo_helper_archive,
-    get_thermo_helper_status,
     is_thermo_helper_supported,
-    locate_thermo_helper,
     resolve_thermo_helper_specification,
     verify_thermo_helper_archive,
 )
@@ -141,16 +139,13 @@ def resolve_integration_thermo_helper(
 ) -> Path:
     """Resolve a usable ThermoScanHeaderExtractor executable for integration tests.
 
-    Every helper is checked with the license folder of the per-user data folder, which the integration tests also
-    use when they pass the returned executable as an explicit helper path.
+    Extracts the pinned archive into the test cache (`tests/.cache/thermo-helper`), unless an earlier run already
+    did, and accepts the Thermo license with the extracted helper. Call it only while
+    `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR` names a temporary folder, as the session fixture
+    `_isolate_thermo_license` in `tests/conftest.py` guarantees, so that the acceptance never reaches the
+    license folder of the user. The managed helper of the user is not used.
 
-    Resolution strategy:
-    1. Check the managed helper in the per-user data folder (read-only). If it is ready, return it.
-    2. Otherwise, extract the pinned archive into the test cache (`tests/.cache/thermo-helper`), unless an earlier
-       run already did. Transient network failures skip the test; integrity failures propagate.
-    3. Check the cached helper as an explicit helper path. If its license is not accepted, skip the test. The
-       license is never accepted on the user's behalf.
-    4. Return the ready executable. Missing, version and other helper failures remain test failures.
+    Transient network failures skip the test. Integrity, version and other helper failures remain test failures.
 
     Args:
         specification: Pinned helper specification. If None (default),
@@ -158,22 +153,12 @@ def resolve_integration_thermo_helper(
         cache_root: Root directory for caching the helper across test runs.
 
     Returns:
-        The validated Path to a ready Thermo helper executable.
+        The path of the cached helper executable, with the license accepted.
     """
     specification = specification or resolve_specification_or_skip()
-
-    managed_status = get_thermo_helper_status(specification=specification)
-    if managed_status.is_ready and managed_status.path is not None:
-        return managed_status.path
-
     cached_executable = _extract_cached_thermo_helper(specification, cache_root.resolve())
-    try:
-        return locate_thermo_helper(cached_executable, specification=specification)
-    except ThermoHelperLicenseError:
-        pytest.skip(
-            "The Thermo license is not accepted. To run this test, set up the helper in the default folder with "
-            "`rawtrace-qc thermo install`, then review and accept the terms with `rawtrace-qc thermo accept-license`."
-        )
+    accept_thermo_license(cached_executable, specification=specification)
+    return cached_executable
 
 
 def _read_cache_age(stamp_path: Path) -> float:

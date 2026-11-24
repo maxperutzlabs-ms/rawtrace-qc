@@ -11,11 +11,13 @@ These instructions add to the global agent instructions and take precedence wher
 
 ## Thermo license
 
-- Never accept the Thermo license for the user, in code or in tests. Do not run the real helper with `--agree-to-terms`, because acceptance applies to the whole user account. Test the license flow with `MockThermoHelper`.
+- Never accept the Thermo license for the user. Only an explicit user action runs `--agree-to-terms`: `accept_thermo_license()`, `rawtrace-qc thermo accept-license` or the GUI's Accept license button.
+- Tests must use the real helper for the license flow, including acceptance, but only with `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR` set to a temporary folder. The test suite sets it for the whole session, so tests never read or change the user's own acceptance file.
+- Prefer the real helper to `MockThermoHelper`. Use the mock where the real helper cannot be used, for example in unit tests or for failures it cannot produce on demand.
 
 ## Trace contract
 
-- `docs/scan-trace-spec.md` is the contract with ThermoScanHeaderExtractor, and `traces/schema.py` with `validate_trace` is its reference implementation. Change them together and update the `document_version` of the spec.
+- `docs/scan-trace-spec.md` is the contract with ThermoScanHeaderExtractor, and `traces/schema.py` with `validate_trace` is its reference implementation. Change them together. Whether to raise `document_version` is the owner's decision; ask. By convention it goes up once per release when a release is near, and with each change when no release is planned.
 - Read, write and validate trace artifacts only through `load_trace`, `write_trace` and `validate_trace`.
 
 ## Errors

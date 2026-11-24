@@ -87,23 +87,6 @@ class TestExplicitHelperPath:
 
 
 class TestAcceptThermoLicense:
-    def test_accepts_terms_and_confirms_acceptance_with_the_helper(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        executable = create_mock_helper_file(tmp_path)
-        mock_runner = MockThermoHelper()
-        monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
-
-        accept_thermo_license(executable)
-
-        assert mock_runner.license_accepted is True
-        assert mock_runner.commands_run == [
-            [str(executable.resolve()), "--version"],
-            [str(executable.resolve()), "--license-status"],
-            [str(executable.resolve()), "--agree-to-terms"],
-            [str(executable.resolve()), "--license-status"],
-        ]
-
     def test_raises_when_helper_exits_abnormally(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         executable = create_mock_helper_file(tmp_path)
         mock_runner = MockThermoHelper(agreement_exit_code=1, stderr="agreement failed")
@@ -145,9 +128,10 @@ class TestAcceptThermoLicense:
         mock_runner = MockThermoHelper(agreement_exit_code=5)
         monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
 
-        with pytest.raises(ThermoHelperConfigError):
+        with pytest.raises(ThermoHelperConfigError) as error:
             accept_thermo_license(executable)
 
+        assert str(thermo_config_directory()) in str(error.value)
         assert mock_runner.license_accepted is False
 
 
