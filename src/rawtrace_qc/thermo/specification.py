@@ -14,7 +14,7 @@ THERMO_HELPER_NAME = "thermoscanheaderextractor"
 
 _REPOSITORY_URL = "https://github.com/maxperutzlabs-ms/thermo-scan-header-extractor"
 
-ArchiveFormat = Literal["zip"]
+ArchiveFormat = Literal["zip", "tar.gz"]
 
 
 @dataclass(frozen=True, slots=True)

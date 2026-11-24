@@ -255,7 +255,7 @@ Rawtrace-qc finds the helper in one of two ways:
 
 `get_thermo_helper_status()` has no side effects and returns one of these states: `READY`, `NOT_INSTALLED`, `UNLICENSED`, `INVALID_VERSION`, or `UNSUPPORTED_PLATFORM`. It reports an unusable explicit path as `NOT_INSTALLED`. In contrast, `locate_thermo_helper()` returns the executable or raises a specific `ThermoHelperError`.
 
-`install_thermo_helper()` verifies the digest before it extracts the archive, and it installs through a temporary staging folder. It never runs the helper and never accepts the license. It raises an error on a conflicting installation unless the caller passes `overwrite=True`.
+`install_thermo_helper()` verifies the digest before it extracts the archive, and it installs through a temporary staging folder. The pinned asset sets the archive format, ZIP or `.tar.gz`. Extraction accepts only regular files and directories with safe relative paths, and it sets the execute bit of the executable, because copying the members drops their file modes. It never runs the helper and never accepts the license. It raises an error on a conflicting installation unless the caller passes `overwrite=True`.
 
 The helper is the only authority on the license state:
 
@@ -332,9 +332,8 @@ An entry appears only after the extraction has finished, because `TraceCache` fi
 
 Upstream archives exist for Linux and macOS on x64 and arm64, so these steps should be sufficient. We have not tried them yet.
 
-1. Pin the assets in `thermo/specification.py`. The executable has no `.exe` extension on these platforms.
-2. Add `.tar.gz` support, because `ArchiveFormat` and the extraction code currently handle only ZIP files.
-3. Add the OS to the `test-full` job in `ci.yml`, which currently runs only on Windows, and exclude the same OS and Python combination from `test-no-network`.
+1. Pin the assets in `thermo/specification.py`. The executable has no `.exe` extension on these platforms, and the archives are `.tar.gz` files.
+2. Add the OS to the `test-full` job in `ci.yml`, which currently runs only on Windows, and exclude the same OS and Python combination from `test-no-network`.
 
 ### Add reports to the CLI
 

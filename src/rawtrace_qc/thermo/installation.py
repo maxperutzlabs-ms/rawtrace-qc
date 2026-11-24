@@ -6,9 +6,15 @@ import hashlib
 import json
 import shutil
 import stat
+import tarfile
 import tempfile
 import zlib
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
+from functools import partial
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from typing import IO, cast
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 from zipfile import BadZipFile, LargeZipFile, ZipFile, ZipInfo
@@ -22,11 +28,15 @@ from rawtrace_qc.errors import (
 )
 from rawtrace_qc.thermo.locator import managed_thermo_helper_directory
 from rawtrace_qc.thermo.specification import (
+    ArchiveFormat,
     ThermoHelperSpecification,
     resolve_thermo_helper_specification,
 )
 
 _INSTALL_MANIFEST_NAME = ".rawtrace-qc-thermo-helper.json"
+_EXECUTABLE_MODE_BITS = (
+    stat.S_IXUSR | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH
+)
 
 
 def install_thermo_helper(
@@ -37,7 +47,7 @@ def install_thermo_helper(
     timeout: float = 60.0,
     overwrite: bool = False,
 ) -> Path:
-    """Install the pinned Thermo helper from a download or local ZIP archive.
+    """Install the pinned Thermo helper from a download or local archive.
 
     Both sources are copied or downloaded to a temporary file, verified against
     the pinned SHA-256 digest, and safely extracted into a temporary directory
@@ -51,8 +61,9 @@ def install_thermo_helper(
     content is only removed after the new archive has been verified.
 
     Args:
-        archive_path: Local ZIP archive to install. If None (default), download
-            the archive from the pinned release URL.
+        archive_path: Local release archive to install, in the archive format
+            of the specification (`.zip` or `.tar.gz`). If None (default),
+            download the archive from the pinned release URL.
         data_directory: Application data directory override. If None (default),
             use the platform-specific user data directory.
         specification: Pinned helper release metadata. If None (default),
@@ -70,8 +81,8 @@ def install_thermo_helper(
             release.
         ThermoHelperDownloadError: If the pinned archive cannot be downloaded.
         ThermoHelperChecksumError: If the source archive checksum is incorrect.
-        ThermoHelperArchiveError: If the source is not a safe ZIP containing
-            the expected executable.
+        ThermoHelperArchiveError: If the source is not a safe archive
+            containing the expected executable.
         ThermoHelperInstallConflictError: If `overwrite` is False and the
             versioned install directory already contains a helper executable
             from a different or unmanaged installation.
@@ -101,7 +112,9 @@ def install_thermo_helper(
             dir=install_parent,
         ) as temporary_name:
             temporary_directory = Path(temporary_name)
-            staged_archive = temporary_directory / "helper.zip"
+            staged_archive = (
+                temporary_directory / f"helper.{specification.archive_format}"
+            )
             if archive_path is None:
                 download_thermo_helper_archive(
                     staged_archive,
@@ -348,9 +361,12 @@ def extract_thermo_helper_archive(
 ) -> Path:
     """Verify and safely extract the helper into a new staging directory.
 
+    The archive format comes from `specification`, not from the file name.
     Archive paths are validated before any member is written. Absolute paths,
-    traversal components, Windows alternate-stream paths, and symbolic links
-    are rejected. On failure, the newly created extraction directory is removed.
+    traversal components, Windows alternate-stream paths, and members other
+    than regular files and directories, such as links, are rejected. The
+    extracted executable is made executable for its owner, group, and others.
+    On failure, the newly created extraction directory is removed.
 
     Args:
         archive_path: Local path to the downloaded or user-supplied archive.
@@ -388,12 +404,14 @@ def extract_thermo_helper_archive(
     verify_thermo_helper_archive(archive_file, specification=specification)
     extraction_created = False
     try:
-        with ZipFile(archive_file) as archive:
-            members = _validated_archive_members(archive, extraction_root)
+        with _open_archive_members(
+            archive_file, specification.archive_format
+        ) as archive_members:
+            members = _validated_archive_members(archive_members, extraction_root)
             executable_members = [
-                (info, relative_path)
-                for info, relative_path in members
-                if not info.is_dir()
+                (member, relative_path)
+                for member, relative_path in members
+                if not member.is_dir
                 and relative_path.name == specification.executable_name
             ]
             if len(executable_members) != 1:
@@ -421,13 +439,13 @@ def extract_thermo_helper_archive(
 
             extraction_root.mkdir(parents=True, exist_ok=False)
             extraction_created = True
-            for info, relative_path in members:
+            for member, relative_path in members:
                 output_path = _checked_output_path(extraction_root, relative_path)
-                if info.is_dir():
+                if member.is_dir:
                     output_path.mkdir(parents=True, exist_ok=True)
                     continue
                 output_path.parent.mkdir(parents=True, exist_ok=True)
-                with archive.open(info) as source, output_path.open("xb") as output:
+                with member.open() as source, output_path.open("xb") as output:
                     shutil.copyfileobj(source, output)
 
             executable_path = extraction_root.joinpath(*executable_relative.parts)
@@ -436,6 +454,9 @@ def extract_thermo_helper_archive(
                     f"Thermo helper archive did not extract "
                     f"{specification.executable_name!r} as a regular file."
                 )
+            executable_path.chmod(
+                executable_path.stat().st_mode | _EXECUTABLE_MODE_BITS
+            )
             return executable_path
     except ThermoHelperInstallationError:
         if extraction_created:
@@ -444,6 +465,7 @@ def extract_thermo_helper_archive(
     except (
         BadZipFile,
         LargeZipFile,
+        tarfile.TarError,
         EOFError,
         OSError,
         RuntimeError,
@@ -454,7 +476,9 @@ def extract_thermo_helper_archive(
             shutil.rmtree(extraction_root, ignore_errors=True)
         raise ThermoHelperArchiveError(
             f"Could not safely extract Thermo helper archive {archive_file}: "
-            f"{error}. Obtain a valid, unencrypted ZIP archive."
+            f"{error}. Check that the data directory has free space and that "
+            "security software does not block the extracted files, then try "
+            "again."
         ) from error
 
 
@@ -462,7 +486,7 @@ def _copy_local_archive(source_path: Path, destination: Path) -> None:
     if not source_path.is_file():
         raise ThermoHelperArchiveError(
             f"Local Thermo helper archive {source_path} does not exist or is "
-            "not a regular file. Select a readable ZIP archive."
+            "not a regular file. Select the downloaded release archive."
         )
     try:
         with source_path.open("rb") as source, destination.open("xb") as output:
@@ -476,29 +500,62 @@ def _copy_local_archive(source_path: Path, destination: Path) -> None:
         ) from error
 
 
+@dataclass(frozen=True, slots=True)
+class _ArchiveMember:
+    name: str
+    is_dir: bool
+    open: Callable[[], IO[bytes]]
+
+
+@contextmanager
+def _open_archive_members(
+    archive_file: Path, archive_format: ArchiveFormat
+) -> Iterator[list[_ArchiveMember]]:
+    if archive_format == "zip":
+        with ZipFile(archive_file) as zip_archive:
+            yield [_zip_member(zip_archive, info) for info in zip_archive.infolist()]
+    else:
+        with tarfile.open(archive_file, "r:gz") as tar_archive:
+            yield [_tar_member(tar_archive, info) for info in tar_archive.getmembers()]
+
+
+def _zip_member(archive: ZipFile, info: ZipInfo) -> _ArchiveMember:
+    if stat.S_ISLNK(info.external_attr >> 16):
+        raise ThermoHelperArchiveError(
+            f"Thermo helper archive contains symbolic link "
+            f"{info.filename!r}; links are not permitted."
+        )
+    return _ArchiveMember(info.filename, info.is_dir(), partial(archive.open, info))
+
+
+def _tar_member(archive: tarfile.TarFile, info: tarfile.TarInfo) -> _ArchiveMember:
+    if not (info.isfile() or info.isdir()):
+        raise ThermoHelperArchiveError(
+            f"Thermo helper archive contains {info.name!r}, which is not a regular "
+            "file or directory; links and special files are not permitted."
+        )
+    open_member = cast(Callable[[], IO[bytes]], partial(archive.extractfile, info))
+    return _ArchiveMember(info.name, info.isdir(), open_member)
+
+
 def _validated_archive_members(
-    archive: ZipFile,
+    archive_members: list[_ArchiveMember],
     extraction_root: Path,
-) -> list[tuple[ZipInfo, PurePosixPath]]:
-    members: list[tuple[ZipInfo, PurePosixPath]] = []
+) -> list[tuple[_ArchiveMember, PurePosixPath]]:
+    members: list[tuple[_ArchiveMember, PurePosixPath]] = []
     seen_paths: set[PurePosixPath] = set()
     seen_casefolded: set[str] = set()
-    for info in archive.infolist():
-        relative_path = _safe_archive_relative_path(info.filename)
-        if stat.S_ISLNK(info.external_attr >> 16):
-            raise ThermoHelperArchiveError(
-                f"Thermo helper archive contains symbolic link "
-                f"{info.filename!r}; links are not permitted."
-            )
+    for member in archive_members:
+        relative_path = _safe_archive_relative_path(member.name)
         folded_path = relative_path.as_posix().casefold()
         if relative_path in seen_paths or folded_path in seen_casefolded:
             raise ThermoHelperArchiveError(
-                f"Thermo helper archive contains duplicate path {info.filename!r}."
+                f"Thermo helper archive contains duplicate path {member.name!r}."
             )
         seen_paths.add(relative_path)
         seen_casefolded.add(folded_path)
         _checked_output_path(extraction_root, relative_path)
-        members.append((info, relative_path))
+        members.append((member, relative_path))
     if not members:
         raise ThermoHelperArchiveError("Thermo helper archive is empty.")
     return members

@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import shutil
+import stat
+import sys
+import tarfile
 from dataclasses import replace
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -53,6 +57,29 @@ def _create_archive(
     return archive_path, replace(WIN_X64_SPECIFICATION, sha256=digest)
 
 
+def _create_tar_archive(
+    directory: Path, members: dict[str, bytes] | None = None, *, symlinks: tuple[str, ...] = ()
+) -> tuple[Path, ThermoHelperSpecification]:
+    specification = replace(
+        WIN_X64_SPECIFICATION, runtime="linux-x64", archive_format="tar.gz", executable_name="ThermoScanHeaderExtractor"
+    )
+    archive_path = directory / "helper.tar.gz"
+    archive_members = members or {specification.executable_name: b"ELFmock-helper", "LICENSE.txt": b"license"}
+    with tarfile.open(archive_path, "w:gz") as archive:
+        for name, content in archive_members.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(content)
+            info.mode = 0o644
+            archive.addfile(info, io.BytesIO(content))
+        for name in symlinks:
+            info = tarfile.TarInfo(name)
+            info.type = tarfile.SYMTYPE
+            info.linkname = specification.executable_name
+            archive.addfile(info)
+    digest = hashlib.sha256(archive_path.read_bytes()).hexdigest()
+    return archive_path, replace(specification, sha256=digest)
+
+
 def _managed_directory(data_directory: Path, specification: ThermoHelperSpecification) -> Path:
     return managed_thermo_helper_directory(specification, data_directory=data_directory)
 
@@ -82,6 +109,17 @@ class TestInstallThermoHelper:
         assert executable.read_bytes() == b"MZmock-helper"
         assert (managed_directory / "ThermoScanHeaderExtractor.dll").read_bytes() == b"mock-dependency"
         assert archive_path.is_file()
+        _assert_no_staging_directories(data_directory, specification)
+
+    def test_installs_local_tar_gz_archive(self, tmp_path: Path) -> None:
+        archive_path, specification = _create_tar_archive(tmp_path)
+        data_directory = tmp_path / "appdata"
+
+        executable = install_thermo_helper(archive_path, data_directory=data_directory, specification=specification)
+
+        assert executable == _managed_directory(data_directory, specification) / "ThermoScanHeaderExtractor"
+        assert executable.read_bytes() == b"ELFmock-helper"
+        assert (executable.parent / "LICENSE.txt").read_bytes() == b"license"
         _assert_no_staging_directories(data_directory, specification)
 
     def test_installs_below_version_and_runtime_directories(self, tmp_path: Path) -> None:
@@ -511,3 +549,34 @@ class TestExtractThermoHelperArchive:
             )
 
         assert tuple(target_directory.iterdir()) == ()
+
+    @pytest.mark.parametrize(
+        ("members", "symlinks", "message"),
+        [
+            (None, ("link",), "not a regular file or directory"),
+            ({"ThermoScanHeaderExtractor": b"ELF", "../escape.txt": b"outside"}, (), "unsafe member path"),
+            ({"ThermoScanHeaderExtractor": b"ELF", "bin/ThermoScanHeaderExtractor": b"ELF"}, (), "exactly one"),
+        ],
+        ids=["symlink", "traversal", "two-executables"],
+    )
+    def test_rejects_unsafe_tar_gz_archive(
+        self, tmp_path: Path, members: dict[str, bytes] | None, symlinks: tuple[str, ...], message: str
+    ) -> None:
+        archive_path, specification = _create_tar_archive(tmp_path, members, symlinks=symlinks)
+        target_directory = tmp_path / "extracted"
+
+        with pytest.raises(ThermoHelperArchiveError, match=message):
+            extract_thermo_helper_archive(archive_path, target_directory, specification=specification)
+
+        assert not target_directory.exists()
+        assert not (tmp_path / "escape.txt").exists()
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX file modes")
+    def test_sets_the_execute_bit_of_the_executable(self, tmp_path: Path) -> None:
+        archive_path, specification = _create_tar_archive(tmp_path)
+
+        executable = extract_thermo_helper_archive(archive_path, tmp_path / "extracted", specification=specification)
+
+        mode = executable.stat().st_mode
+        assert mode & stat.S_IXUSR and mode & stat.S_IXGRP and mode & stat.S_IXOTH
+        assert not (executable.parent / "LICENSE.txt").stat().st_mode & stat.S_IXUSR
