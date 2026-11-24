@@ -11,6 +11,7 @@ from rawtrace_qc.errors import (
     ThermoHelperNotFoundError,
 )
 from rawtrace_qc.thermo import locator
+from rawtrace_qc.thermo.runner import thermo_config_directory
 from rawtrace_qc.thermo.specification import (
     ThermoHelperSpecification,
     resolve_thermo_helper_specification,
@@ -57,16 +58,21 @@ def get_thermo_license_text(
         data_directory=data_directory,
         specification=specification,
     )
+    config_directory = thermo_config_directory(
+        specification, data_directory=data_directory
+    )
     locator.verify_helper_version(
         executable,
         expected_version=specification.version,
         timeout=timeout,
+        config_directory=config_directory,
     )
     license_text = _run_license_command(
         executable,
         "--thermo-license",
         action="display the Thermo license agreement",
         timeout=timeout,
+        config_directory=config_directory,
     )
     if not license_text.strip():
         raise ThermoHelperLicenseError(
@@ -87,9 +93,10 @@ def accept_thermo_license(
 
     Runs the helper's explicit `--agree-to-terms` command only when the helper
     does not already report the license as accepted. Success is confirmed by
-    asking the helper again with `--license-status`. Where the helper records
-    acceptance is left to the helper: per user account, unless
-    `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR` names another folder.
+    asking the helper again with `--license-status`. The helper records the
+    acceptance in `thermo_config_directory()` of the data directory, so it
+    applies to one helper version. If `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR`
+    is set and not empty, the helper uses that folder instead.
 
     Args:
         explicit_path: Optional helper executable or containing directory.
@@ -120,12 +127,18 @@ def accept_thermo_license(
         data_directory=data_directory,
         specification=specification,
     )
+    config_directory = thermo_config_directory(
+        specification, data_directory=data_directory
+    )
     locator.verify_helper_version(
         executable,
         expected_version=specification.version,
         timeout=timeout,
+        config_directory=config_directory,
     )
-    if locator.query_license_status(executable, timeout=timeout).accepted:
+    if locator.query_license_status(
+        executable, timeout=timeout, config_directory=config_directory
+    ).accepted:
         return
 
     _run_license_command(
@@ -133,9 +146,12 @@ def accept_thermo_license(
         "--agree-to-terms",
         action="accept the Thermo license agreement",
         timeout=timeout,
+        config_directory=config_directory,
     )
 
-    license_status = locator.query_license_status(executable, timeout=timeout)
+    license_status = locator.query_license_status(
+        executable, timeout=timeout, config_directory=config_directory
+    )
     if not license_status.accepted:
         raise ThermoHelperLicenseError(
             f"ThermoScanHeaderExtractor at {executable} exited successfully but "
@@ -170,11 +186,13 @@ def _run_license_command(
     *,
     action: str,
     timeout: float,
+    config_directory: Path,
 ) -> str:
     try:
         result = locator.execute_helper_process(
             [executable, command],
             timeout=timeout,
+            config_directory=config_directory,
         )
     except subprocess.TimeoutExpired as error:
         raise ThermoHelperLicenseError(

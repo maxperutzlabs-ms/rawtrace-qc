@@ -22,7 +22,12 @@ from rawtrace_qc.errors import (
     ThermoHelperVersionError,
     UnsupportedPlatformError,
 )
-from rawtrace_qc.thermo.runner import describe_helper_start_failure
+from rawtrace_qc.thermo.runner import (
+    THERMO_CONFIG_DIRECTORY_VARIABLE,
+    describe_helper_start_failure,
+    thermo_config_directory,
+    thermo_helper_environment,
+)
 from rawtrace_qc.thermo.specification import (
     THERMO_HELPER_RELEASE,
     ThermoHelperSpecification,
@@ -32,7 +37,6 @@ from rawtrace_qc.thermo.specification import (
 _LICENSE_ACCEPTED_EXIT_CODE = 0
 _LICENSE_NOT_ACCEPTED_EXIT_CODE = 4
 _LICENSE_CONFIG_ERROR_EXIT_CODE = 5
-_CONFIG_DIRECTORY_VARIABLE = "THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR"
 _SETUP_ERRORS = (
     ThermoHelperNotFoundError,
     ThermoHelperVersionError,
@@ -244,8 +248,13 @@ def get_thermo_helper_status(
             expected_version=specification.version,
         )
 
+    config_directory = thermo_config_directory(
+        specification, data_directory=data_directory
+    )
     try:
-        reported_version = query_helper_version(candidate)
+        reported_version = query_helper_version(
+            candidate, config_directory=config_directory
+        )
     except ThermoHelperVersionError as error:
         return ThermoHelperStatus(
             state=ThermoHelperState.INVALID_VERSION,
@@ -271,7 +280,9 @@ def get_thermo_helper_status(
         )
 
     try:
-        license_status = query_license_status(candidate)
+        license_status = query_license_status(
+            candidate, config_directory=config_directory
+        )
     except ThermoHelperConfigError as error:
         return ThermoHelperStatus(
             state=ThermoHelperState.UNLICENSED,
@@ -418,6 +429,7 @@ def verify_helper_version(
     expected_version: str = THERMO_HELPER_RELEASE.version,
     *,
     timeout: float = 10.0,
+    config_directory: Path | str | None = None,
 ) -> str:
     """Verify that the helper reports the expected version.
 
@@ -426,6 +438,8 @@ def verify_helper_version(
         expected_version: Expected release version. Defaults to the pinned
             version in `THERMO_HELPER_RELEASE`.
         timeout: Maximum time to wait in seconds. Defaults to 10.0.
+        config_directory: Folder in which the helper records the license
+            acceptance. If None (default), uses `thermo_config_directory()`.
 
     Returns:
         The verified version string.
@@ -434,7 +448,9 @@ def verify_helper_version(
         ThermoHelperVersionError: If the reported version does not match
             `expected_version` or cannot be read.
     """
-    reported = query_helper_version(executable_path, timeout=timeout)
+    reported = query_helper_version(
+        executable_path, timeout=timeout, config_directory=config_directory
+    )
     if reported != expected_version:
         raise ThermoHelperVersionError(
             f"ThermoScanHeaderExtractor at {executable_path} reported version "
@@ -448,6 +464,7 @@ def query_helper_version(
     executable_path: Path,
     *,
     timeout: float = 10.0,
+    config_directory: Path | str | None = None,
 ) -> str:
     """Query the version reported by ThermoScanHeaderExtractor.
 
@@ -456,6 +473,8 @@ def query_helper_version(
     Args:
         executable_path: Path to the ThermoScanHeaderExtractor executable.
         timeout: Maximum time to wait in seconds. Defaults to 10.0.
+        config_directory: Folder in which the helper records the license
+            acceptance. If None (default), uses `thermo_config_directory()`.
 
     Returns:
         The version string reported by the tool.
@@ -465,7 +484,11 @@ def query_helper_version(
             status, times out, or returns an unreadable version.
     """
     try:
-        result = execute_helper_process([executable_path, "--version"], timeout=timeout)
+        result = execute_helper_process(
+            [executable_path, "--version"],
+            timeout=timeout,
+            config_directory=config_directory,
+        )
     except subprocess.TimeoutExpired as error:
         raise ThermoHelperVersionError(
             f"ThermoScanHeaderExtractor at {executable_path} timed out after "
@@ -506,6 +529,7 @@ def query_license_status(
     executable_path: Path,
     *,
     timeout: float = 10.0,
+    config_directory: Path | str | None = None,
 ) -> ThermoLicenseStatus:
     """Ask the helper whether the Thermo license has been accepted.
 
@@ -517,6 +541,8 @@ def query_license_status(
     Args:
         executable_path: Path to the ThermoScanHeaderExtractor executable.
         timeout: Maximum time to wait in seconds. Defaults to 10.0.
+        config_directory: Folder in which the helper records the license
+            acceptance. If None (default), uses `thermo_config_directory()`.
 
     Returns:
         The license state and the path of the acceptance marker file.
@@ -533,7 +559,9 @@ def query_license_status(
     action = "when checking the Thermo license state"
     try:
         result = execute_helper_process(
-            [executable_path, "--license-status"], timeout=timeout
+            [executable_path, "--license-status"],
+            timeout=timeout,
+            config_directory=config_directory,
         )
     except subprocess.TimeoutExpired as error:
         raise ThermoHelperTimeoutError(
@@ -555,7 +583,7 @@ def query_license_status(
         detail = f" Helper message: {stderr_sample}" if stderr_sample else ""
         raise ThermoHelperConfigError(
             f"ThermoScanHeaderExtractor at {executable_path} could not determine "
-            f"its license folder. If {_CONFIG_DIRECTORY_VARIABLE} is set, it "
+            f"its license folder. If {THERMO_CONFIG_DIRECTORY_VARIABLE} is set, it "
             f"must be the absolute path of a folder.{detail}"
         )
     if result.returncode not in (
@@ -592,12 +620,17 @@ def execute_helper_process(
     args: Sequence[str | Path],
     *,
     timeout: float = 10.0,
+    config_directory: Path | str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Execute a low-level Thermo helper command.
+
+    The process runs with the environment of `thermo_helper_environment()`.
 
     Args:
         args: Command arguments starting with the executable path.
         timeout: Maximum execution time in seconds. Defaults to 10.0.
+        config_directory: Folder in which the helper records the license
+            acceptance. If None (default), uses `thermo_config_directory()`.
 
     Returns:
         The completed process result with captured standard output and error.
@@ -615,4 +648,5 @@ def execute_helper_process(
         errors="replace",
         timeout=timeout,
         check=False,
+        env=thermo_helper_environment(config_directory),
     )

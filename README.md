@@ -41,7 +41,7 @@ The Thermo tool runs on Windows, on Linux with glibc (for example Ubuntu, Debian
 1. Click the wrench button at the top right of the application. A dot on this button shows that the setup is not complete.
 2. Click **Download**.
 3. Click **Show license** to read the terms.
-4. Click **Accept license** if you agree to the terms. Your acceptance applies to your user account.
+4. Click **Accept license** if you agree to the terms. Your acceptance applies to your user account and to this version of the Thermo tool. When an update of rawtrace-qc brings a new version of the Thermo tool, you accept its license once more.
 5. Click **Close**.
 
 If your computer has no internet access, use another computer to download the ZIP file that the window names. Then copy the file to your computer and click **Install from ZIP** instead of **Download**.
@@ -97,7 +97,7 @@ uv tool install "rawtrace-qc[cli]"
 
 Use `"rawtrace-qc[cli,gui]"` if you want both interfaces. The same options work with `pip install`.
 
-To set up the Thermo tool, run the commands below. The `accept-license` command prints the terms and records your acceptance in one step, so run it only if you agree to them. To read the terms first, use **Show license** in the desktop application.
+To set up the Thermo tool, run the commands below. The `accept-license` command prints the terms and records your acceptance in one step, so run it only if you agree to them. Your acceptance applies to this version of the Thermo tool, so you accept again after an update that brings a new version. To read the terms first, use **Show license** in the desktop application.
 
 ```bash
 rawtrace-qc thermo install

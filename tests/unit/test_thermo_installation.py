@@ -30,6 +30,7 @@ from rawtrace_qc.thermo import (
     extract_thermo_helper_archive,
     install_thermo_helper,
     managed_thermo_helper_directory,
+    thermo_config_directory,
     verify_thermo_helper_archive,
 )
 from rawtrace_qc.thermo import installation as installation_module
@@ -367,6 +368,23 @@ class TestInstallThermoHelper:
         assert replaced.read_bytes() == b"MZnew-helper"
         assert not (replaced.parent / "leftover.txt").exists()
         _assert_no_staging_directories(data_directory, second_specification)
+
+    def test_install_and_overwrite_keep_an_existing_license_acceptance(self, tmp_path: Path) -> None:
+        data_directory = tmp_path / "appdata"
+        first_archive, first_specification = _create_archive(tmp_path, filename="first.zip")
+        marker = thermo_config_directory(first_specification, data_directory=data_directory) / "accepted"
+        marker.parent.mkdir(parents=True)
+        marker.touch()
+        second_archive, second_specification = _create_archive(
+            tmp_path, {WIN_X64_SPECIFICATION.executable_name: b"MZnew-helper"}, filename="second.zip"
+        )
+
+        install_thermo_helper(first_archive, data_directory=data_directory, specification=first_specification)
+        install_thermo_helper(
+            second_archive, data_directory=data_directory, specification=second_specification, overwrite=True
+        )
+
+        assert marker.is_file()
 
     def test_overwrite_downloads_again_over_a_broken_helper_with_a_matching_manifest(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

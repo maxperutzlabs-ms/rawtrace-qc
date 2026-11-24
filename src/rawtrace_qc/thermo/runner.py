@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import threading
 import time
@@ -18,9 +19,16 @@ from rawtrace_qc.errors import (
     ThermoHelperOutputError,
     ThermoHelperTimeoutError,
 )
+from rawtrace_qc.thermo.specification import (
+    THERMO_HELPER_NAME,
+    THERMO_HELPER_RELEASE,
+    ThermoHelperSpecification,
+)
 
 if TYPE_CHECKING:
     from rawtrace_qc.extractors.protocol import PrecisionMode
+
+THERMO_CONFIG_DIRECTORY_VARIABLE = "THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR"
 
 _DEFAULT_TIMEOUT = 600.0
 _CANCEL_POLL_SECONDS = 0.1
@@ -82,11 +90,13 @@ def run_thermo_helper(
     *,
     timeout: float = _DEFAULT_TIMEOUT,
     cancel: threading.Event | None = None,
+    config_directory: Path | str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Execute a helper command and return its captured text output.
 
     The command is passed as an argument sequence with shell execution disabled.
-    Standard output and error are captured as bytes and decoded as UTF-8.
+    Standard output and error are captured as bytes and decoded as UTF-8. The
+    process runs with the environment of `thermo_helper_environment()`.
 
     Args:
         command: Argument sequence produced by
@@ -94,6 +104,8 @@ def run_thermo_helper(
         timeout: Maximum process duration in seconds. Defaults to 600.0.
         cancel: Optional event that stops the helper process when set from
             another thread. Defaults to None.
+        config_directory: Folder in which the helper records the license
+            acceptance. If None (default), uses `thermo_config_directory()`.
 
     Returns:
         A completed process containing decoded standard output and error.
@@ -118,12 +130,18 @@ def run_thermo_helper(
     if timeout <= 0:
         raise ValueError(f"timeout must be greater than zero, got {timeout!r}.")
 
+    process_environment = thermo_helper_environment(config_directory)
     try:
         result = (
-            _execute_process(command_arguments, timeout=timeout)
+            _execute_process(
+                command_arguments, timeout=timeout, env=process_environment
+            )
             if cancel is None
             else _execute_cancellable_process(
-                command_arguments, timeout=timeout, cancel=cancel
+                command_arguments,
+                timeout=timeout,
+                cancel=cancel,
+                env=process_environment,
             )
         )
     except subprocess.TimeoutExpired as error:
@@ -174,6 +192,64 @@ def run_thermo_helper(
     )
 
 
+def thermo_config_directory(
+    specification: ThermoHelperSpecification | None = None,
+    *,
+    data_directory: Path | str | None = None,
+) -> Path:
+    """Return the default folder in which the helper records the license acceptance.
+
+    The folder is `<data_directory>/tools/<tool>/<version>/config`, next to the
+    install folders of the helper version and not inside one, so that
+    reinstalling the helper keeps the acceptance. Each helper version has its
+    own folder, so the license is accepted again for every new helper version.
+    The folder is not created, because the helper creates it when needed.
+
+    Args:
+        specification: Release specification. If None (default), uses the
+            pinned release. A helper given by an explicit path also uses the
+            folder of the pinned release.
+        data_directory: Data directory root. If None (default), uses the
+            platform default user data directory.
+
+    Returns:
+        The absolute path of the folder.
+    """
+    tool_name = THERMO_HELPER_NAME if specification is None else specification.tool_name
+    version = (
+        THERMO_HELPER_RELEASE.version
+        if specification is None
+        else specification.version
+    )
+    root = environment.default_data_directory(data_directory).resolve()
+    return root / "tools" / tool_name / version / "config"
+
+
+def thermo_helper_environment(
+    config_directory: Path | str | None = None,
+) -> dict[str, str]:
+    """Return the environment variables for a helper process.
+
+    Returns a copy of `os.environ` in which `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR`
+    names `config_directory`. If the variable is already set and not empty, its
+    value is kept unchanged, so a user can choose another folder. `os.environ`
+    itself is not changed.
+
+    Args:
+        config_directory: Folder in which the helper records the license
+            acceptance. If None (default), uses `thermo_config_directory()`.
+
+    Returns:
+        The environment variables for the helper process.
+    """
+    process_environment = dict(os.environ)
+    if not process_environment.get(THERMO_CONFIG_DIRECTORY_VARIABLE):
+        if config_directory is None:
+            config_directory = thermo_config_directory()
+        process_environment[THERMO_CONFIG_DIRECTORY_VARIABLE] = str(config_directory)
+    return process_environment
+
+
 def describe_helper_start_failure(executable_path: Path | str, error: OSError) -> str:
     """Explain to the user why the helper executable could not be started.
 
@@ -211,22 +287,27 @@ def describe_helper_start_failure(executable_path: Path | str, error: OSError) -
 
 
 def _execute_process(
-    command: Sequence[str], *, timeout: float
+    command: Sequence[str], *, timeout: float, env: dict[str, str]
 ) -> subprocess.CompletedProcess[bytes]:
     return subprocess.run(
         command,
         capture_output=True,
         timeout=timeout,
         check=False,
+        env=env,
     )
 
 
 def _execute_cancellable_process(
-    command: Sequence[str], *, timeout: float, cancel: threading.Event
+    command: Sequence[str],
+    *,
+    timeout: float,
+    cancel: threading.Event,
+    env: dict[str, str],
 ) -> subprocess.CompletedProcess[bytes]:
     deadline = time.monotonic() + timeout
     with subprocess.Popen(
-        command, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env
     ) as process:
         while True:
             try:

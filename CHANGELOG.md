@@ -17,6 +17,7 @@
 - Extraction raises more specific errors: `AcquisitionAccessError` for a raw file that cannot be opened, `AcquisitionReadError` for one that is not readable, `NoScansError` for a raw file without scans of the requested MS levels, and `TraceWriteError` when the trace files cannot be written. They subclass `ExtractionError`. A run without any scans is now reported as such, and a timeout no longer says that the file may be corrupt.
 - **Breaking:** A crash, an internal error or an unknown exit code of the Thermo tool now raises `ThermoHelperCommandError` instead of `ExtractionError`, and exit codes 4 and 5 during extraction raise `ThermoHelperLicenseError` and `ThermoHelperConfigError`. The new `is_thermo_setup_error()` tells setup problems of the Thermo tool from per-file failures.
 - Error messages of the Thermo tool no longer contain its raw output. Only its last message line is shown.
+- rawtrace-qc keeps the license acceptance of the Thermo tool in its own data folder, separately for each version of the Thermo tool. After this update, you accept the new Thermo license once more. The new `thermo_config_directory()` returns this folder. If `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR` is set, the Thermo tool uses that folder instead.
 
 ### Removed
 - **Breaking:** `RUNTIME_FALLBACKS`. Every supported runtime now has its own pinned build, so there is nothing to replace it with.

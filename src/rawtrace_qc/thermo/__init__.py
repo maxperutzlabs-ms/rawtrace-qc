@@ -27,6 +27,7 @@ from rawtrace_qc.thermo.locator import (
 from rawtrace_qc.thermo.runner import (
     build_thermo_helper_command,
     run_thermo_helper,
+    thermo_config_directory,
 )
 from rawtrace_qc.thermo.runtime import find_host_runtime
 from rawtrace_qc.thermo.specification import (
@@ -66,6 +67,7 @@ __all__ = [
     "query_license_status",
     "resolve_thermo_helper_specification",
     "run_thermo_helper",
+    "thermo_config_directory",
     "verify_helper_version",
     "verify_thermo_helper_archive",
 ]

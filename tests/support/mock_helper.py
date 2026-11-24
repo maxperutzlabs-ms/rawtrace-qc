@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from rawtrace_qc.thermo.runner import THERMO_CONFIG_DIRECTORY_VARIABLE, thermo_helper_environment
 from rawtrace_qc.thermo.specification import THERMO_HELPER_RELEASE
 
 
@@ -21,7 +22,9 @@ class MockThermoHelper:
     stdout) and `--agree-to-terms` sets, and configurable failure modes (exit
     code, empty/garbage stdout, timeouts, or execution errors). A call without
     arguments exits with the usage code 1. Nothing is written to disk, so tests
-    never touch the real user's license state.
+    never touch the real user's license state. `config_directories` records the
+    value of `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR` that each command would
+    receive.
     """
 
     version: str = THERMO_HELPER_RELEASE.version
@@ -38,11 +41,15 @@ class MockThermoHelper:
     license_accepted: bool = False
     records_acceptance: bool = True
     commands_run: list[list[str]] = field(default_factory=list)
+    config_directories: list[str] = field(default_factory=list)
 
-    def __call__(self, args: Sequence[str | Path], *, timeout: float = 10.0) -> subprocess.CompletedProcess[str]:
+    def __call__(
+        self, args: Sequence[str | Path], *, timeout: float = 10.0, config_directory: Path | str | None = None
+    ) -> subprocess.CompletedProcess[str]:
         """Execute a simulated helper command."""
         str_args = [str(arg) for arg in args]
         self.commands_run.append(str_args)
+        self.config_directories.append(thermo_helper_environment(config_directory)[THERMO_CONFIG_DIRECTORY_VARIABLE])
 
         if self.os_error is not None:
             raise self.os_error

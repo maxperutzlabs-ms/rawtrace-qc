@@ -40,7 +40,10 @@ class TestCliThermoIntegration:
         accept_output = capsys.readouterr().out
         assert accept_result == 0
         assert "The following Thermo license terms will be accepted by this command:" in accept_output
-        assert "Thermo license acceptance is recorded for the current user." in accept_output
+        assert (
+            "Thermo license acceptance is recorded for the current user and this version of the Thermo tool."
+            in accept_output
+        )
 
         status_result = main(["thermo", "status", "--helper-path", str(thermo_helper_executable)])
 

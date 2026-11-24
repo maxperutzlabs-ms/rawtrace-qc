@@ -111,7 +111,7 @@ Some test fixtures have special rules:
 - **Network:** Use `urlopen_or_skip()` from `tests/support/network.py`. It skips on network and proxy failures, but it fails on a missing asset.
 - **Qt:** GUI tests use `pytest.importorskip` and the `offscreen` Qt platform, so they run without a display.
 
-The helper records the license state for the user account, and the tests do not redirect it. Mock tests therefore cover the unaccepted state and the acceptance flow. CI accepts the license on Windows on purpose, so that the real Thermo integration tests run there.
+rawtrace-qc records the license state in the data folder of the user account, and the tests do not redirect it. Mock tests therefore cover the unaccepted state and the acceptance flow. CI accepts the license on Windows on purpose, so that the real Thermo integration tests run there.
 
 ## Code conventions
 
@@ -262,7 +262,14 @@ The helper is the only authority on the license state:
 - `--license-status` changes nothing. It exits with code 0 if the terms are accepted and with code 4 if not, and in both cases prints one line with the path of the acceptance marker file. It exits with code 5 and prints nothing if it cannot determine that path, for example because `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR` is relative. `query_license_status()` runs it and returns a `ThermoLicenseStatus` with `accepted` and `marker_path`. Exit code 5 raises `ThermoHelperConfigError`, another code raises `ThermoHelperCommandError`, and unreadable output raises `ThermoHelperOutputError`.
 - `get_thermo_helper_status()` reports the marker path as `license_marker_path`. On exit code 5, the state is `UNLICENSED` with `license_marker_path` None, and `locate_thermo_helper()` raises, `extract_batch()` reports, and `rawtrace-qc thermo status` explains a `ThermoHelperConfigError` instead of `ThermoHelperLicenseError`. Any other failure of `--license-status` gives the state `INVALID_VERSION`, because the helper itself does not work.
 - `--thermo-license` prints the terms without accepting them.
-- `--agree-to-terms` records acceptance for the current user account, or in the folder that `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR` names. `accept_thermo_license()` returns early if `--license-status` already reports acceptance. Otherwise, it runs this command and confirms the state with `--license-status`.
+- `--agree-to-terms` records acceptance in the folder that `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR` names. `accept_thermo_license()` returns early if `--license-status` already reports acceptance. Otherwise, it runs this command and confirms the state with `--license-status`.
+
+rawtrace-qc keeps the acceptance in its own data folder, in `<user_data_dir>/tools/thermoscanheaderextractor/<version>/config/`, which `thermo_config_directory()` returns:
+
+- The library starts every helper process with `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR` set to this folder, as `thermo_helper_environment()` builds it. If the variable is already set and not empty, the library passes its value on unchanged, so a user can choose another folder. It never changes `os.environ`. The helper creates the folder when it records the acceptance.
+- The folder belongs to the helper version and not to a runtime folder, so `install --overwrite` keeps the acceptance. A helper given by an explicit path uses the folder of the pinned version.
+- The helper itself only checks that a marker file exists, not which license version was accepted. A folder per helper version therefore makes users accept the terms of each new helper version once.
+- A helper that you run by hand uses its own per-user location, so it reports the license as not accepted unless you set the variable to this folder.
 
 Branch only on exit codes, never on the helper's stderr. The helper uses these exit codes, and `ThermoExtractor` raises these errors for them:
 

@@ -188,7 +188,7 @@ def resolve_integration_thermo_helper(
     if cache_status.state is ThermoHelperState.UNLICENSED:
         pytest.skip(
             f"Thermo license terms are not accepted ({cache_status.message}); review and accept them with "
-            f"`rawtrace-qc thermo accept-license --helper-path {cache_status.path}` to run this test."
+            f"`rawtrace-qc thermo accept-license --data-directory {cache_data_dir}` to run this test."
         )
 
     if cache_status.state is ThermoHelperState.READY and cache_status.path is not None:

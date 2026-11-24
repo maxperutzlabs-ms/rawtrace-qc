@@ -13,7 +13,14 @@ from rawtrace_qc.errors import (
     ThermoHelperNotFoundError,
     UnsupportedPlatformError,
 )
-from rawtrace_qc.thermo import accept_thermo_license, get_thermo_license_text, managed_thermo_helper_directory
+from rawtrace_qc.thermo import (
+    accept_thermo_license,
+    get_thermo_helper_status,
+    get_thermo_license_text,
+    managed_thermo_helper_directory,
+    thermo_config_directory,
+)
+from rawtrace_qc.thermo.runner import THERMO_CONFIG_DIRECTORY_VARIABLE
 from tests.support.mock_helper import MockThermoHelper, create_mock_helper_file
 from tests.support.thermo_helper import WIN_X64_SPECIFICATION
 
@@ -143,6 +150,22 @@ class TestAcceptThermoLicense:
             accept_thermo_license(executable)
 
         assert mock_runner.license_accepted is False
+
+
+class TestLicenseFolder:
+    @pytest.mark.parametrize("operation", [accept_thermo_license, get_thermo_license_text, get_thermo_helper_status])
+    def test_every_helper_call_uses_the_config_folder_of_the_data_directory(
+        self, operation: Callable[..., object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv(THERMO_CONFIG_DIRECTORY_VARIABLE, raising=False)
+        executable = create_mock_helper_file(tmp_path / "explicit")
+        mock_runner = MockThermoHelper()
+        monkeypatch.setattr("rawtrace_qc.thermo.locator.execute_helper_process", mock_runner)
+
+        operation(executable, data_directory=tmp_path / "appdata")
+
+        expected = str(thermo_config_directory(data_directory=tmp_path / "appdata"))
+        assert mock_runner.config_directories == [expected] * len(mock_runner.commands_run)
 
 
 class TestUnsupportedRuntime:

@@ -342,8 +342,8 @@ def create_thermo_tool_dialog(
                 self.accept_license_button,
             )
             license_note = qt_widgets.QLabel(
-                "Accepting applies to your user account. Use Show license to read "
-                "the terms first."
+                "Accepting applies to your user account and to this version of the "
+                "Thermo tool. Use Show license to read the terms first."
             )
             license_note.setObjectName("settingsFieldNote")
             license_note.setWordWrap(True)
@@ -519,7 +519,8 @@ def create_thermo_tool_dialog(
             self.refresh()
             self._show_license_text(
                 "Thermo license accepted",
-                "You accepted these terms for your user account.",
+                "You accepted these terms for your user account and this version of "
+                "the Thermo tool.",
                 terms,
             )
 

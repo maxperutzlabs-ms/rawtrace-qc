@@ -115,7 +115,10 @@ def accept_license(
         print_cli_error(error, thermo=True)
         return 1
 
-    print("Thermo license acceptance is recorded for the current user.")
+    print(
+        "Thermo license acceptance is recorded for the current user and this "
+        "version of the Thermo tool."
+    )
     return 0
 
 

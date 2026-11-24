@@ -27,6 +27,7 @@ from rawtrace_qc.errors import (
 )
 from rawtrace_qc.extractors import BrukerExtractor, ThermoExtractor
 from rawtrace_qc.thermo import locator as locator_module
+from rawtrace_qc.thermo import thermo_config_directory
 from rawtrace_qc.traces import load_trace, write_trace
 from tests.support.mock_helper import MockThermoHelper, create_mock_helper_file
 
@@ -192,7 +193,7 @@ class TestThermoExtractorUnit:
         assert isinstance(error.value.__cause__, ThermoHelperCommandError)
         assert not output_directory.exists() or not list(output_directory.iterdir())
 
-    def test_cancel_passes_the_event_to_the_helper_and_cleans_up_partial_output(
+    def test_passes_the_cancel_event_and_config_folder_to_the_helper_and_cleans_up_partial_output(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         raw_file = tmp_path / "sample.raw"
@@ -207,7 +208,7 @@ class TestThermoExtractorUnit:
         )
 
         def mock_cancelled_runner(command, **kwargs):
-            received.append(kwargs["cancel"])
+            received.extend((kwargs["cancel"], kwargs["config_directory"]))
             temp_out = Path(command[command.index("-o") + 1])
             (temp_out / "sample.raw.ms1-trace.parquet").write_text("partial")
             raise OperationCancelledError("stopped")
@@ -215,9 +216,11 @@ class TestThermoExtractorUnit:
         monkeypatch.setattr("rawtrace_qc.extractors.thermo.run_thermo_helper", mock_cancelled_runner)
 
         with pytest.raises(OperationCancelledError):
-            ThermoExtractor(cancel=cancel).extract(raw_file, output_directory=output_directory)
+            ThermoExtractor(data_directory=tmp_path / "appdata", cancel=cancel).extract(
+                raw_file, output_directory=output_directory
+            )
 
-        assert received == [cancel]
+        assert received == [cancel, thermo_config_directory(data_directory=tmp_path / "appdata")]
         assert not output_directory.exists()
 
     @pytest.mark.parametrize(

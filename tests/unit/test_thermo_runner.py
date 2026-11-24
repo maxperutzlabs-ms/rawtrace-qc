@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -18,14 +20,20 @@ from rawtrace_qc.errors import (
     ThermoHelperTimeoutError,
 )
 from rawtrace_qc.thermo import (
+    THERMO_HELPER_NAME,
+    THERMO_HELPER_RELEASE,
     ThermoHelperState,
     build_thermo_helper_command,
+    execute_helper_process,
     get_thermo_helper_status,
     run_thermo_helper,
+    thermo_config_directory,
 )
 from rawtrace_qc.thermo import runner as runner_module
+from rawtrace_qc.thermo.runner import THERMO_CONFIG_DIRECTORY_VARIABLE, thermo_helper_environment
 
 _MOCK_HELPER_SCRIPT = Path(__file__).resolve().parents[1] / "support" / "mock_helper.py"
+_PRINT_CONFIG_DIRECTORY = [sys.executable, "-c", f"import os; print(os.environ[{THERMO_CONFIG_DIRECTORY_VARIABLE!r}])"]
 
 
 def _mock_helper_command(mode: str) -> list[str | Path]:
@@ -161,7 +169,9 @@ class TestRunThermoHelper:
         assert "0.5-second timeout" in str(error.value)
 
     def test_translates_nonzero_exit_from_mocked_process(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        def return_failure(command: list[str], *, timeout: float) -> subprocess.CompletedProcess[bytes]:
+        def return_failure(
+            command: list[str], *, timeout: float, env: dict[str, str]
+        ) -> subprocess.CompletedProcess[bytes]:
             return subprocess.CompletedProcess(
                 args=command,
                 returncode=4,
@@ -178,7 +188,9 @@ class TestRunThermoHelper:
         assert error.value.stderr == r"captured \xff error"
 
     def test_translates_timeout_from_mocked_process(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        def raise_timeout(command: list[str], *, timeout: float) -> subprocess.CompletedProcess[bytes]:
+        def raise_timeout(
+            command: list[str], *, timeout: float, env: dict[str, str]
+        ) -> subprocess.CompletedProcess[bytes]:
             raise subprocess.TimeoutExpired(
                 command,
                 timeout,
@@ -195,7 +207,9 @@ class TestRunThermoHelper:
         assert error.value.stderr == "partial error"
 
     def test_translates_missing_executable_from_mocked_process(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        def raise_missing_executable(_command: list[str], *, timeout: float) -> subprocess.CompletedProcess[bytes]:
+        def raise_missing_executable(
+            _command: list[str], *, timeout: float, env: dict[str, str]
+        ) -> subprocess.CompletedProcess[bytes]:
             raise FileNotFoundError("helper.exe was not found")
 
         monkeypatch.setattr(runner_module, "_execute_process", raise_missing_executable)
@@ -208,7 +222,9 @@ class TestRunThermoHelper:
         assert "helper.exe was not found" in str(error.value)
 
     def test_translates_unreadable_output_from_mocked_process(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        def return_unreadable_output(command: list[str], *, timeout: float) -> subprocess.CompletedProcess[bytes]:
+        def return_unreadable_output(
+            command: list[str], *, timeout: float, env: dict[str, str]
+        ) -> subprocess.CompletedProcess[bytes]:
             return subprocess.CompletedProcess(
                 args=command,
                 returncode=0,
@@ -231,6 +247,55 @@ class TestRunThermoHelper:
 
         with pytest.raises(ValueError, match="timeout must be greater than zero"):
             run_thermo_helper(["helper.exe"], timeout=0)
+
+
+class TestThermoConfigDirectory:
+    def test_returns_an_absolute_folder_below_the_data_directory(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+
+        config_directory = thermo_config_directory(data_directory="appdata")
+
+        assert config_directory == (
+            tmp_path.resolve() / "appdata" / "tools" / THERMO_HELPER_NAME / THERMO_HELPER_RELEASE.version / "config"
+        )
+
+
+class TestThermoHelperEnvironment:
+    @pytest.mark.parametrize(
+        ("variable_value", "expected"),
+        [("", str(thermo_config_directory())), ("/user/choice", "/user/choice")],
+        ids=["empty-uses-the-default-folder", "set-value-wins"],
+    )
+    def test_names_the_default_folder_unless_the_variable_is_set(
+        self, variable_value: str, expected: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv(THERMO_CONFIG_DIRECTORY_VARIABLE, variable_value)
+        environment_before = dict(os.environ)
+
+        process_environment = thermo_helper_environment(None)
+
+        assert process_environment[THERMO_CONFIG_DIRECTORY_VARIABLE] == expected
+        assert dict(os.environ) == environment_before
+
+    @pytest.mark.parametrize(
+        "execute",
+        [
+            lambda folder: run_thermo_helper(_PRINT_CONFIG_DIRECTORY, config_directory=folder).stdout,
+            lambda folder: (
+                run_thermo_helper(_PRINT_CONFIG_DIRECTORY, config_directory=folder, cancel=threading.Event()).stdout
+            ),
+            lambda folder: execute_helper_process(_PRINT_CONFIG_DIRECTORY, config_directory=folder).stdout,
+        ],
+        ids=["run", "run-cancellable", "execute"],
+    )
+    def test_helper_processes_receive_the_config_folder(
+        self, execute: Callable[[Path], str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv(THERMO_CONFIG_DIRECTORY_VARIABLE, raising=False)
+
+        assert execute(tmp_path).strip() == str(tmp_path)
 
 
 class TestHelperStartFailure:
