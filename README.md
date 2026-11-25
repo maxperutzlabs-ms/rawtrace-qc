@@ -20,6 +20,9 @@ We recommend [uv](https://docs.astral.sh/uv/getting-started/installation/) becau
 uv tool install "rawtrace-qc[gui]"
 ```
 
+> [!NOTE]
+> If Anaconda or another conda distribution is installed on your computer, or the desktop application does not start, install with `uv tool install --managed-python "rawtrace-qc[gui]"`. This makes uv use a Python version that it manages itself instead of the one from conda. See [Troubleshooting](#troubleshooting).
+
 If you prefer pip, you need Python 3.12 or later:
 
 ```bash
@@ -132,6 +135,20 @@ traces = [
 ]
 write_html(process_traces(traces), Path("sample-qc.html"))
 ```
+
+## Troubleshooting
+
+**The desktop application does not start and reports that PySide6 could not load its libraries**, or shows `ImportError: DLL load failed while importing QtCore`.
+
+A known cause on Windows is that rawtrace-qc was installed on the Python of Anaconda or another conda distribution. Conda brings its own copies of system libraries, which can conflict with those of PySide6. Reinstall rawtrace-qc on a Python that uv manages:
+
+```bash
+uv tool install --managed-python --reinstall "rawtrace-qc[gui]"
+```
+
+If uv does not know the `--managed-python` option, update uv the way you installed it, for example with `uv self update` for the standalone installer or `pip install -U uv`.
+
+To check which Python rawtrace-qc uses, run `uv tool dir` and open `rawtrace-qc\pyvenv.cfg` in the folder it prints. The `home =` line must point to a folder of uv, not to `anaconda3`, `miniconda3` or another conda folder. Installing the desktop application with `pip install` into a conda environment is not supported, because it can fail in the same way.
 
 ## Develop rawtrace-qc
 

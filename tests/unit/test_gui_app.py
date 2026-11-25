@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 from rawtrace_qc.discovery import DiscoveryCandidate, FileFormat, Vendor
 from rawtrace_qc.errors import OperationCancelledError
-from rawtrace_qc.gui.app import _dialog_start_directory, _load_qt, create_window
+from rawtrace_qc.gui.app import _dialog_start_directory, _load_qt, create_window, main
 from rawtrace_qc.gui.config import load_settings
 from rawtrace_qc.gui.patterns import FilenamePattern, PatternMode
 from rawtrace_qc.gui.reporting import ExcludedFile, ReportGenerationResult, ReportProgress, ReportStage
@@ -123,6 +123,45 @@ def test_dialog_start_directory_uses_selected_path_or_appdata(
     assert _dialog_start_directory(str(selected_directory)) == str(selected_directory)
     assert _dialog_start_directory(str(selected_file)) == str(selected_directory)
     assert _dialog_start_directory(str(tmp_path / "missing")) == str(appdata)
+
+
+class TestMain:
+    @pytest.mark.parametrize(
+        ("error", "platform", "conda", "message"),
+        [
+            (ModuleNotFoundError("No module named 'PySide6'", name="PySide6"), "linux", False, "optional 'gui' extra"),
+            (ImportError("DLL load failed."), "win32", True, "could not load its libraries: DLL load failed. rawtrace"),
+            (ImportError("DLL load failed."), "win32", False, None),
+            (ImportError("libEGL.so.1: cannot open shared object file"), "linux", True, None),
+            (ModuleNotFoundError("No module named 'shiboken6'", name="shiboken6"), "win32", False, None),
+        ],
+    )
+    def test_main_explains_known_qt_load_failures_and_reraises_others(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        error: ImportError,
+        platform: str,
+        conda: bool,
+        message: str | None,
+    ) -> None:
+        def import_module(name: str) -> object:
+            raise error
+
+        if conda:
+            (tmp_path / "conda-meta").mkdir()
+        monkeypatch.setattr("sys.base_prefix", str(tmp_path))
+        monkeypatch.setattr("sys.platform", platform)
+        monkeypatch.setattr("rawtrace_qc.gui.app.import_module", import_module)
+
+        if message is None:
+            with pytest.raises(ImportError) as caught:
+                main()
+            assert caught.value is error
+        else:
+            assert main() == 1
+            assert message in capsys.readouterr().err
 
 
 class TestSettingsDialog:

@@ -60,8 +60,16 @@ _LOG_MAX_LINES = 5000
 
 
 def main() -> int:
-    """Create the Qt application, show its main window, and run its event loop."""
-    qt_core, qt_gui, qt_widgets = _load_qt()
+    """Create the Qt application, show its main window, and run its event loop.
+
+    If PySide6 cannot be loaded, print the reason and the fix to stderr and
+    return 1.
+    """
+    try:
+        qt_core, qt_gui, qt_widgets = _load_qt()
+    except RuntimeError as error:
+        print(error, file=sys.stderr)
+        return 1
     try:
         settings = load_settings()
     except ConfigurationError:
@@ -2052,12 +2060,23 @@ def _load_qt() -> tuple[Any, Any, Any]:
             import_module("PySide6.QtGui"),
             import_module("PySide6.QtWidgets"),
         )
-    except ModuleNotFoundError as error:
-        raise RuntimeError(
-            "The rawtrace-qc desktop application requires the optional 'gui' "
-            'extra. Install it with `pip install "rawtrace-qc[gui]"` or '
-            '`uv tool install "rawtrace-qc[gui]"`.'
-        ) from error
+    except ImportError as error:
+        if isinstance(error, ModuleNotFoundError) and error.name == "PySide6":
+            raise RuntimeError(
+                "The rawtrace-qc desktop application requires the optional 'gui' "
+                'extra. Install it with `pip install "rawtrace-qc[gui]"` or '
+                '`uv tool install "rawtrace-qc[gui]"`.'
+            ) from error
+        if sys.platform == "win32" and (Path(sys.base_prefix) / "conda-meta").is_dir():
+            raise RuntimeError(
+                f"PySide6 could not load its libraries: {str(error).rstrip('.')}. "
+                f"rawtrace-qc runs on the conda Python in {sys.base_prefix}, whose "
+                "own libraries can conflict with those of PySide6. Reinstall "
+                "rawtrace-qc on a Python that uv manages with `uv tool install "
+                '--managed-python --reinstall "rawtrace-qc[gui]"`. If uv does '
+                "not know `--managed-python`, update uv first."
+            ) from error
+        raise
 
 
 def _mode_selector(
