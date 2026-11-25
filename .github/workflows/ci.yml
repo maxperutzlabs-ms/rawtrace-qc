@@ -1,7 +1,8 @@
 # Lints, type-checks, and runs the test suite on all supported platforms using
 # the locked dependencies from `uv.lock`. Linux and Windows run every supported
-# Python version, and macOS runs only the latest. Tests marked `network` run
-# only in the `test-full` job, so only one job downloads the Thermo helper.
+# Python version, and macOS runs only the latest. Tests marked `network` and the
+# tests with the real Thermo helper run only in the `test-full` job, once per
+# operating system.
 
 name: CI
 on:
@@ -51,16 +52,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # macOS runners are often unavailable, so macOS runs only in `test-full`,
+        # with the latest Python.
+        os: [ubuntu-latest, windows-latest]
         python-version: ["3.12", "3.13", "3.14"]
         exclude:
-        # macOS runners are often unavailable, so test only the latest Python.
-        - os: macos-latest
-          python-version: "3.12"
-        - os: macos-latest
-          python-version: "3.13"
         # Covered by the `test-full` job.
         - os: windows-latest
+          python-version: "3.12"
+        - os: ubuntu-latest
           python-version: "3.12"
     env:
       # Run Qt without a display server so the GUI tests work on headless runners.
@@ -84,9 +84,9 @@ jobs:
     - name: Run tests
       run: uv run pytest -m "not network" --cov --cov-report=term
 
-  # Runs the whole suite, including the `network` tests, on the oldest supported
-  # Python. Add an OS here once rawtrace-qc pins the Thermo helper for it, and
-  # exclude the same combination from `test-no-network`.
+  # Runs the whole suite, including the `network` tests, once per operating
+  # system: Windows and Linux on the oldest supported Python, and macOS on the
+  # latest. Exclude each combination here from `test-no-network`.
   test-full:
     name: Full test (${{ matrix.os }}, Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
@@ -94,8 +94,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest]
-        python-version: ["3.12"]
+        include:
+        - os: windows-latest
+          python-version: "3.12"
+        - os: ubuntu-latest
+          python-version: "3.12"
+        - os: macos-latest
+          python-version: "3.14"
     env:
       # Run Qt without a display server so the GUI tests work on headless runners.
       QT_QPA_PLATFORM: offscreen
@@ -120,4 +125,4 @@ jobs:
     - name: Run tests
       env:
         THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR: ${{ runner.temp }}/thermo-config
-      run: uv run pytest --cov --cov-report=term
+      run: uv run pytest -rs --cov --cov-report=term

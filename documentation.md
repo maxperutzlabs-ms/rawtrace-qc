@@ -78,8 +78,8 @@ CI in `.github/workflows/ci.yml` runs the following checks with the locked depen
 
 - `ruff check .` and `ruff format --check .`.
 - `pyrefly check`, which covers only `src`.
-- `pytest -m "not network" --cov` on Ubuntu with Python 3.12, 3.13, and 3.14, on Windows with Python 3.13 and 3.14, and on macOS with Python 3.14.
-- The full test suite, including the `network` tests, in a separate `test-full` job on Windows with Python 3.12. Only this job downloads the Thermo helper. Its test step sets `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR` to a folder in the runner's temporary directory, and the job does not accept the license itself; the tests accept it in their own temporary folders.
+- `pytest -m "not network" --cov` on Ubuntu and Windows with Python 3.13 and 3.14.
+- The full test suite, including the `network` tests and the tests with the real Thermo helper, in a separate `test-full` job on Windows and Ubuntu with Python 3.12 and on macOS (arm64) with Python 3.14. Only this job downloads the Thermo helper. Its test step sets `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR` to a folder in the runner's temporary directory, and the job does not accept the license itself; the tests accept it in their own temporary folders.
 
 Ruff settings differ between source and tests. Source files use 88 characters and the rules `E`, `F`, `I`, `UP`, and `B`. Because `tests/ruff.toml` replaces this configuration, tests use 120 characters and the default Ruff rules.
 
