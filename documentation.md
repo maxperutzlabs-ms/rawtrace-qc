@@ -349,6 +349,16 @@ An entry appears only after the extraction has finished, because `TraceCache` fi
 
 Move `TraceCache` and `generate_report()` from `gui` into `workflows`, because they do not need Qt. `ExclusionReason` and `FileExclusion` must move too, since `reporting.py` uses them. Then call the workflow from a new command in `cli`.
 
+### Release a version
+
+1. Set the version in `pyproject.toml`, and run `uv lock`.
+2. Rename `[Unreleased]` in `CHANGELOG.md` to `[X.Y.Z] - YYYY-MM-DD`.
+3. Check that CI passes on `main`, then push the tag `vX.Y.Z`.
+
+The tag starts `.github/workflows/release.yml`. It checks that the tag matches the version in `pyproject.toml` and that the newest changelog entry is `## [X.Y.Z] - YYYY-MM-DD`, runs `ci.yml`, builds the package, and checks that the wheel's `rawtrace-qc --version` prints the version. It then publishes to PyPI with trusted publishing from the GitHub environment `pypi`, and creates a GitHub release with the newest changelog entry and the built files. PyPI comes before the GitHub release, because a version can never be uploaded to PyPI again, while a GitHub release can be redone.
+
+If a job fails before the PyPI upload, nothing has been published: re-run the failed jobs for a flaky failure, or fix the problem, delete the tag, and tag the fixed commit. If only the GitHub release fails, re-run that job.
+
 ### Add media to the documentation
 
 Media files are on the separate `media` branch in `docs/screenshots/`, so that they do not increase the size of `main`. Name a file `<subject>-v<N>.<ext>`, and never change a published file. Link to it with a full `raw.githubusercontent.com` URL, because PyPI cannot display relative links.
@@ -365,5 +375,3 @@ Media files are on the separate `media` branch in `docs/screenshots/`, so that t
 ## Maintain this document
 
 Update this document in the same change when a public API, a contract, a convention, or a known gap changes. Describe the current behavior only, and put plans in [Known gaps](#known-gaps). Do not insert hard line breaks in Markdown paragraphs.
-
-Before a release, check that the version in `pyproject.toml` and the fallback version in `src/rawtrace_qc/__init__.py` agree.

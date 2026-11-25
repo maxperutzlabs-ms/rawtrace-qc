@@ -1,0 +1,132 @@
+# Publishes a release when a version tag (e.g. v0.2.0) is pushed: checks the
+# tag against the project version and changelog, runs the CI checks, builds
+# the package, publishes it to PyPI and creates a GitHub release with the
+# newest changelog entry. PyPI comes first because a version uploaded there
+# can never be uploaded again, while a GitHub release can be redone.
+
+name: Release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate tag, project version and changelog
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Check that the tag matches the project version and changelog
+      env:
+        TAG: ${{ github.ref_name }}
+      run: |
+        version="${TAG#v}"
+        project_version=$(sed -n 's/^version = "\(.*\)"$/\1/p' pyproject.toml)
+        if [ "$project_version" != "$version" ]; then
+          echo "::error::Tag $TAG does not match the project version $project_version in pyproject.toml."
+          exit 1
+        fi
+
+        # The newest changelog entry must belong to this release and have a date.
+        latest_entry=$(grep -m 1 '^## ' CHANGELOG.md)
+        case "$latest_entry" in
+          "## [$version] - "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
+          *)
+            echo "::error::The newest CHANGELOG.md entry is '$latest_entry', expected '## [$version] - YYYY-MM-DD'."
+            exit 1
+            ;;
+        esac
+
+  ci:
+    name: CI
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    name: Build package
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        python-version: "3.12"
+
+    - name: Build sdist and wheel
+      run: uv build
+
+    # The command-line interface needs the `cli` extra.
+    - name: Smoke test the wheel
+      env:
+        TAG: ${{ github.ref_name }}
+      run: |
+        version="${TAG#v}"
+        installed_version=$(uv tool run --isolated --from "./dist/rawtrace_qc-$version-py3-none-any.whl[cli]" rawtrace-qc --version)
+        if [ "$installed_version" != "$version" ]; then
+          echo "::error::The built wheel reports version '$installed_version', expected '$version'."
+          exit 1
+        fi
+
+    - uses: actions/upload-artifact@v7
+      with:
+        name: dist
+        path: dist/
+        if-no-files-found: error
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/project/rawtrace-qc/
+    permissions:
+      id-token: write
+    steps:
+    - uses: actions/download-artifact@v8
+      with:
+        name: dist
+        path: dist/
+
+    - uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    name: Create GitHub release
+    needs: publish-pypi
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v6
+
+    - uses: actions/download-artifact@v8
+      with:
+        name: dist
+        path: dist/
+
+    - name: Extract the newest changelog entry
+      run: |
+        # Print the lines between the first and the second '## ' heading,
+        # without leading and trailing blank lines.
+        awk '/^## /{count++} count==1 && !/^## /{print} count==2{exit}' CHANGELOG.md \
+        | sed '/^---/d' \
+        | perl -0777 -pe 's/\A\n+//; s/\n+\z/\n/' > release-notes.md
+
+    - name: Create release
+      env:
+        GH_TOKEN: ${{ github.token }}
+        TAG: ${{ github.ref_name }}
+      run: |
+        gh release create "$TAG" dist/* \
+          --verify-tag \
+          --title "rawtrace-qc $TAG" \
+          --notes-file release-notes.md
