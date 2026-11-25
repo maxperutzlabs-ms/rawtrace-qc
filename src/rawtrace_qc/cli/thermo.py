@@ -36,22 +36,25 @@ def status(
     helper_status = get_thermo_helper_status(explicit_path=helper_path)
     print(f"Thermo helper status: {helper_status.state.value}")
     print(helper_status.message)
+    if helper_status.license_marker_path is not None:
+        print(f"License acceptance file: {helper_status.license_marker_path}")
     if helper_status.is_ready:
         return 0
-    print(_status_action(helper_status))
+    print(_status_action(helper_status, helper_path))
     return 1
 
 
 @thermo_app.command
 def install(
     *,
-    from_zip: Path | None = None,
+    from_archive: Path | None = None,
     overwrite: bool = False,
 ) -> int:
-    """Install the pinned helper from its release or a local ZIP archive.
+    """Install the pinned helper from its release or a local archive.
 
     Args:
-        from_zip: Install from this local ZIP instead of downloading it.
+        from_archive: Install from this local `.zip` or `.tar.gz` archive
+            instead of downloading it.
         overwrite: Replace whatever is already at the install location.
 
     Returns:
@@ -59,7 +62,7 @@ def install(
     """
     try:
         executable = install_thermo_helper(
-            archive_path=from_zip,
+            archive_path=from_archive,
             overwrite=overwrite,
         )
     except ThermoHelperError as error:
@@ -68,8 +71,32 @@ def install(
 
     print(f"Installed ThermoScanHeaderExtractor at {executable}")
     print(
-        "Review the terms, then run `rawtrace-qc thermo accept-license` to accept them."
+        "Read the terms with `rawtrace-qc thermo show-license`, then run "
+        "`rawtrace-qc thermo accept-license` to accept them."
     )
+    return 0
+
+
+@thermo_app.command(name="show-license")
+def show_license(
+    *,
+    helper_path: Path | None = None,
+) -> int:
+    """Display the Thermo license terms without accepting them.
+
+    Args:
+        helper_path: Use this helper executable, or the helper in this folder.
+
+    Returns:
+        Exit code `0` when the terms are displayed, otherwise `1`.
+    """
+    try:
+        terms = get_thermo_license_text(explicit_path=helper_path)
+    except ThermoHelperError as error:
+        print_cli_error(error, thermo=True)
+        return 1
+
+    print(terms, end="" if terms.endswith("\n") else "\n")
     return 0
 
 
@@ -105,19 +132,19 @@ def accept_license(
     return 0
 
 
-def _status_action(helper_status: ThermoHelperStatus) -> str:
-    if (
-        helper_status.state is ThermoHelperState.UNLICENSED
-        and helper_status.license_marker_path is None
-    ):
+def _status_action(helper_status: ThermoHelperStatus, helper_path: Path | None) -> str:
+    helper_option = "" if helper_path is None else f' --helper-path "{helper_path}"'
+    if helper_status.license_folder_unusable:
         return THERMO_CONFIG_HINT
     actions = {
         ThermoHelperState.NOT_INSTALLED: (
-            "Install it with `rawtrace-qc thermo install`; use `--from-zip PATH` "
-            "for an offline archive."
+            "Install it with `rawtrace-qc thermo install`; use "
+            "`--from-archive PATH` for an offline archive."
         ),
         ThermoHelperState.UNLICENSED: (
-            "Review and accept the terms with `rawtrace-qc thermo accept-license`."
+            f"Read the terms with `rawtrace-qc thermo show-license{helper_option}`, "
+            "then accept them with "
+            f"`rawtrace-qc thermo accept-license{helper_option}`."
         ),
         ThermoHelperState.INVALID_VERSION: (
             "Replace it with the pinned helper version using "

@@ -43,6 +43,7 @@ QtWidgets = pytest.importorskip("PySide6.QtWidgets")
 
 ALL_STATES = tuple(ThermoHelperState)
 UNREADY_STATES = tuple(state for state in ALL_STATES if state is not ThermoHelperState.READY)
+_MARKER_PATH = Path("config") / ".thermo-license-accepted"
 
 
 def _status(state: ThermoHelperState, message: str = "helper message") -> ThermoHelperStatus:
@@ -53,6 +54,7 @@ def _status(state: ThermoHelperState, message: str = "helper message") -> Thermo
         version="0.2.0" if installed else None,
         license_accepted=state is ThermoHelperState.READY,
         message=message,
+        license_marker_path=_MARKER_PATH if installed else None,
     )
 
 
@@ -114,6 +116,16 @@ class TestDescribeThermoStatus:
 
         assert (view.installation_ok, view.license_ok) == (True, False)
         assert (view.can_install, view.can_review_license, view.can_accept_license) == (False, True, True)
+
+    def test_unusable_license_folder_explains_the_problem_and_offers_no_acceptance(self) -> None:
+        status = replace(_status(ThermoHelperState.UNLICENSED, "folder problem"), license_marker_path=None)
+
+        view = describe_thermo_status(status)
+
+        assert (view.license_ok, view.can_review_license, view.can_accept_license) == (False, True, False)
+        assert view.detail == "folder problem"
+        assert "license folder" in thermo_tool_required_message(status)
+        assert "not accepted" not in thermo_tool_tooltip(status)
 
     def test_not_installed_offers_only_installation(self) -> None:
         view = describe_thermo_status(_status(ThermoHelperState.NOT_INSTALLED))
@@ -191,7 +203,7 @@ class TestThermoToolDialog:
 
         assert window.installation_status.text() == "Not installed"
         assert not window.download_button.isHidden()
-        assert not window.install_zip_button.isHidden()
+        assert not window.install_archive_button.isHidden()
         assert not window.show_license_button.isEnabled()
         assert not window.accept_license_button.isEnabled()
 
@@ -207,6 +219,7 @@ class TestThermoToolDialog:
         window = dialog(ThermoHelperState.READY)
 
         assert window.license_status.text() == "Accepted"
+        assert str(_MARKER_PATH) in window.license_file_note.text()
         assert window.show_license_button.isEnabled()
         assert not window.accept_license_button.isEnabled()
 
@@ -215,10 +228,10 @@ class TestThermoToolDialog:
 
         assert not window.open_folder_button.isHidden()
         assert not window.download_button.isHidden()
-        assert not window.install_zip_button.isHidden()
+        assert not window.install_archive_button.isHidden()
         assert "helper message" in window.detail_label.text()
 
-    def test_install_from_zip_replaces_an_unusable_installation(
+    def test_install_from_archive_replaces_an_unusable_installation(
         self, dialog, qt_application, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         archive_path = tmp_path / "helper.zip"
@@ -237,7 +250,7 @@ class TestThermoToolDialog:
         )
         monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName", lambda *_args: (str(archive_path), ""))
 
-        window.install_zip_button.click()
+        window.install_archive_button.click()
         _wait_until(qt_application, lambda: window._wait_dialog is None)
         _settle(qt_application)
 
@@ -305,32 +318,40 @@ class TestThermoToolDialog:
         assert visible_after_dismissal
         assert window._wait_dialog is None
 
-    def test_install_from_zip_passes_the_selected_file(
-        self, dialog, host_status, qt_application, monkeypatch: pytest.MonkeyPatch
+    @pytest.mark.parametrize(("platform", "file_filter"), [("win32", "(*.zip)"), ("linux", "(*.tar.gz)")])
+    def test_install_from_archive_passes_the_selected_file(
+        self, dialog, host_status, qt_application, monkeypatch: pytest.MonkeyPatch, platform: str, file_filter: str
     ) -> None:
+        monkeypatch.setattr(environment, "get_platform", lambda: platform)
         window = dialog(ThermoHelperState.NOT_INSTALLED)
         calls: list[object] = []
+        filters: list[str] = []
 
         def install(archive_path: str, *, overwrite: bool) -> Path:
             calls.append((archive_path, overwrite))
             host_status["status"] = _status(ThermoHelperState.UNLICENSED)
             return Path("helper.exe")
 
-        monkeypatch.setattr(thermo_tool, "install_thermo_helper", install)
-        monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName", lambda *_args: ("C:/Downloads/helper.zip", ""))
+        def choose_file(*args: str) -> tuple[str, str]:
+            filters.append(args[-1])
+            return "/Downloads/helper-archive", ""
 
-        window.install_zip_button.click()
+        monkeypatch.setattr(thermo_tool, "install_thermo_helper", install)
+        monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName", choose_file)
+
+        window.install_archive_button.click()
         _wait_until(qt_application, lambda: window.license_status.text() == "Not accepted")
 
-        assert calls == [("C:/Downloads/helper.zip", True)]
+        assert calls == [("/Downloads/helper-archive", True)]
+        assert filters[0].endswith(file_filter)
 
-    def test_cancelling_zip_selection_installs_nothing(self, dialog, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_cancelling_archive_selection_installs_nothing(self, dialog, monkeypatch: pytest.MonkeyPatch) -> None:
         window = dialog(ThermoHelperState.NOT_INSTALLED)
         calls: list[object] = []
         monkeypatch.setattr(thermo_tool, "install_thermo_helper", calls.append)
         monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName", lambda *_args: ("", ""))
 
-        window.install_zip_button.click()
+        window.install_archive_button.click()
 
         assert calls == []
         assert window._wait_dialog is None

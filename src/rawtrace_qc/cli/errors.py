@@ -46,13 +46,14 @@ def thermo_setup_hint(error: Exception) -> str | None:
     if isinstance(error, ThermoHelperNotFoundError):
         return (
             "Install the helper with `rawtrace-qc thermo install` (or "
-            "`rawtrace-qc thermo install --from-zip PATH` offline), then review "
-            "and accept its terms with `rawtrace-qc thermo accept-license`."
+            "`rawtrace-qc thermo install --from-archive PATH` offline), then "
+            "read its terms with `rawtrace-qc thermo show-license` and accept "
+            "them with `rawtrace-qc thermo accept-license`."
         )
     if isinstance(error, ThermoHelperLicenseError):
         return (
-            "Review and accept the displayed terms with "
-            "`rawtrace-qc thermo accept-license`."
+            "Read the terms with `rawtrace-qc thermo show-license`, then accept "
+            "them with `rawtrace-qc thermo accept-license`."
         )
     if isinstance(error, ThermoHelperConfigError):
         return THERMO_CONFIG_HINT

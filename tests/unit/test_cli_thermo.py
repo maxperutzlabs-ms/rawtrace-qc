@@ -53,6 +53,7 @@ class TestThermoStatusCommand:
         assert result == exit_code
         assert f"Thermo helper status: {state}" in output
         assert action in output
+        assert ("License acceptance file: " in output) is (state in {"unlicensed", "ready"})
         if helper is None or platform != "win32":
             assert mock_helper.commands_run == []
         else:
@@ -73,6 +74,20 @@ class TestThermoStatusCommand:
         assert result == 1
         assert "license folder" in output
         assert "accept-license" not in output
+
+    def test_status_repeats_the_helper_path_in_the_license_hints(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        helper = create_mock_helper_file(tmp_path / "helper")
+        monkeypatch.setattr(environment, "get_platform", lambda: "win32")
+        monkeypatch.setattr(environment, "get_machine", lambda: "AMD64")
+        monkeypatch.setattr(locator_module, "execute_helper_process", MockThermoHelper())
+
+        main(["thermo", "status", "--helper-path", str(helper)])
+
+        output = capsys.readouterr().out
+        assert f'thermo show-license --helper-path "{helper}"' in output
+        assert f'thermo accept-license --helper-path "{helper}"' in output
 
     def test_status_reports_missing_helper_path_without_using_managed_helper(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -128,7 +143,7 @@ class TestThermoSetupCommands:
 
         monkeypatch.setattr(thermo_cli_module, "install_thermo_helper", fake_install)
 
-        result = main(["thermo", "install", "--from-zip", str(archive_path)])
+        result = main(["thermo", "install", "--from-archive", str(archive_path)])
 
         output = capsys.readouterr().out
         assert result == 0
@@ -175,7 +190,7 @@ class TestThermoSetupCommands:
 
         monkeypatch.setattr(thermo_cli_module, "install_thermo_helper", fail_install)
 
-        result = main(["thermo", "install", "--from-zip", str(tmp_path / "bad.zip")])
+        result = main(["thermo", "install", "--from-archive", str(tmp_path / "bad.zip")])
 
         captured = capsys.readouterr()
         assert result == 1
@@ -198,6 +213,21 @@ class TestThermoSetupCommands:
         assert result == 1
         assert "Failed to reach download server." in captured.err
         assert "Check setup with `rawtrace-qc thermo status`." in captured.err
+
+    def test_show_license_displays_terms_without_accepting(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _create_helper()
+        mock_helper = MockThermoHelper()
+        monkeypatch.setattr(environment, "get_platform", lambda: "win32")
+        monkeypatch.setattr(environment, "get_machine", lambda: "AMD64")
+        monkeypatch.setattr(locator_module, "execute_helper_process", mock_helper)
+
+        result = main(["thermo", "show-license"])
+
+        assert result == 0
+        assert capsys.readouterr().out == "Mock Thermo license terms.\n"
+        assert mock_helper.license_accepted is False
 
     def test_accept_license_displays_terms_and_records_acceptance_in_the_default_data_folder(
         self,

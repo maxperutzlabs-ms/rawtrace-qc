@@ -44,7 +44,7 @@ The Thermo tool runs on Windows, on Linux with glibc (for example Ubuntu, Debian
 4. Click **Accept license** if you agree to the terms. Your acceptance applies to your user account and to this version of the Thermo tool. When an update of rawtrace-qc brings a new version of the Thermo tool, you accept its license once more.
 5. Click **Close**.
 
-If your computer has no internet access, use another computer to download the ZIP file that the window names. Then copy the file to your computer and click **Install from ZIP** instead of **Download**.
+If your computer has no internet access, use another computer to download the archive file (`.zip` or `.tar.gz`) that the window names. Then copy the file to your computer and click **Install from archive** instead of **Download**.
 
 On macOS, if you extract the Thermo tool by hand instead of installing it with rawtrace-qc, remove the quarantine flag before you use it: `xattr -d com.apple.quarantine <path>`.
 
@@ -97,10 +97,11 @@ uv tool install "rawtrace-qc[cli]"
 
 Use `"rawtrace-qc[cli,gui]"` if you want both interfaces. The same options work with `pip install`.
 
-To set up the Thermo tool, run the commands below. The `accept-license` command prints the terms and records your acceptance in one step, so run it only if you agree to them. Your acceptance applies to this version of the Thermo tool, so you accept again after an update that brings a new version. To read the terms first, use **Show license** in the desktop application.
+To set up the Thermo tool, run the commands below. The `accept-license` command prints the terms and records your acceptance in one step, so run it only if you agree to them. Your acceptance applies to this version of the Thermo tool, so you accept again after an update that brings a new version. The `show-license` command prints the terms without accepting them, and `status` shows the file in which your acceptance is recorded.
 
 ```bash
 rawtrace-qc thermo install
+rawtrace-qc thermo show-license
 rawtrace-qc thermo accept-license
 rawtrace-qc thermo status
 ```

@@ -95,6 +95,18 @@ class ThermoHelperStatus:
         """Return True if the helper is installed, verified, and licensed."""
         return self.state is ThermoHelperState.READY
 
+    @property
+    def license_folder_unusable(self) -> bool:
+        """Return True if the helper cannot use its license folder (exit code 5).
+
+        Accepting the license does not help then. The folder, or the value of
+        `THERMO_SCAN_HEADER_EXTRACTOR_CONFIG_DIR`, must be fixed first.
+        """
+        return (
+            self.state is ThermoHelperState.UNLICENSED
+            and self.license_marker_path is None
+        )
+
 
 def locate_thermo_helper(
     explicit_path: Path | str | None = None,
@@ -141,9 +153,9 @@ def locate_thermo_helper(
         raise ThermoHelperNotFoundError(status.message)
     if status.state is ThermoHelperState.INVALID_VERSION:
         raise ThermoHelperVersionError(status.message)
+    if status.license_folder_unusable:
+        raise ThermoHelperConfigError(status.message)
     if status.state is ThermoHelperState.UNLICENSED:
-        if status.license_marker_path is None:
-            raise ThermoHelperConfigError(status.message)
         raise ThermoHelperLicenseError(status.message)
     if status.state is ThermoHelperState.UNSUPPORTED_PLATFORM:
         raise UnsupportedPlatformError(status.message)

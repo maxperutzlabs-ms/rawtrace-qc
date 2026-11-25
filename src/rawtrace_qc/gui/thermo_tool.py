@@ -23,6 +23,10 @@ from rawtrace_qc.thermo import (
 
 _CHECKING_TEXT = "Checking..."
 _ROW_HEIGHT = 46
+_ARCHIVE_FILTERS = {
+    "zip": "ZIP archives (*.zip)",
+    "tar.gz": "tar.gz archives (*.tar.gz)",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +61,14 @@ def describe_thermo_status(status: ThermoHelperStatus) -> ThermoToolView:
             license_ok=True,
             can_review_license=True,
         )
+    if status.license_folder_unusable:
+        return ThermoToolView(
+            installation="Installed",
+            license="Not usable",
+            installation_ok=True,
+            can_review_license=True,
+            detail=status.message,
+        )
     if status.state is ThermoHelperState.UNLICENSED:
         return ThermoToolView(
             installation="Installed",
@@ -78,7 +90,7 @@ def describe_thermo_status(status: ThermoHelperStatus) -> ThermoToolView:
             can_install=True,
             can_open_folder=True,
             detail=(
-                f"{status.message} Download or Install from ZIP replaces the "
+                f"{status.message} Download or Install from archive replaces the "
                 "contents of the install folder."
             ),
         )
@@ -119,6 +131,8 @@ def thermo_tool_tooltip(status: ThermoHelperStatus) -> str:
         ThermoHelperState.INVALID_VERSION: "not usable",
         ThermoHelperState.UNSUPPORTED_PLATFORM: "not available on this system",
     }
+    if status.license_folder_unusable:
+        return "Thermo Tool: license folder not usable"
     return f"Thermo Tool: {summaries[status.state]}"
 
 
@@ -132,7 +146,11 @@ def thermo_tool_required_message(status: ThermoHelperStatus) -> str:
         Text for the popup shown when `status` is not ready.
     """
     reasons = {
-        ThermoHelperState.UNLICENSED: "Its license has not been accepted yet.",
+        ThermoHelperState.UNLICENSED: (
+            "It cannot use its license folder."
+            if status.license_folder_unusable
+            else "Its license has not been accepted yet."
+        ),
         ThermoHelperState.NOT_INSTALLED: "It is not installed yet.",
         ThermoHelperState.INVALID_VERSION: "The installed copy cannot be used.",
     }
@@ -303,8 +321,8 @@ def create_thermo_tool_dialog(
             self.download_button = self._action_button(
                 "Download", self._download_helper
             )
-            self.install_zip_button = self._action_button(
-                "Install from ZIP...", self._install_from_zip
+            self.install_archive_button = self._action_button(
+                "Install from archive...", self._install_from_archive
             )
             self.open_folder_button = self._action_button(
                 "Open install folder", self._open_install_folder
@@ -315,7 +333,7 @@ def create_thermo_tool_dialog(
                 self.installation_status,
                 None,
                 self.download_button,
-                self.install_zip_button,
+                self.install_archive_button,
                 self.open_folder_button,
             )
             self.location_note = qt_widgets.QLabel()
@@ -341,6 +359,13 @@ def create_thermo_tool_dialog(
                 self.show_license_button,
                 self.accept_license_button,
             )
+            self.license_file_note = qt_widgets.QLabel()
+            self.license_file_note.setObjectName("settingsFieldNote")
+            self.license_file_note.setWordWrap(True)
+            self.license_file_note.setTextInteractionFlags(
+                qt_core.Qt.TextInteractionFlag.TextSelectableByMouse
+            )
+            form.addRow(self._form_label(""), self.license_file_note)
             license_note = qt_widgets.QLabel(
                 "Accepting applies to your user account and to this version of the "
                 "Thermo tool. Use Show license to read the terms first."
@@ -416,7 +441,7 @@ def create_thermo_tool_dialog(
             self._set_status(self.installation_status, _CHECKING_TEXT, "pending")
             self._set_status(self.license_status, _CHECKING_TEXT, "pending")
             self.download_button.setVisible(False)
-            self.install_zip_button.setVisible(False)
+            self.install_archive_button.setVisible(False)
             self.open_folder_button.setVisible(False)
             self.show_license_button.setEnabled(False)
             self.accept_license_button.setEnabled(False)
@@ -436,7 +461,7 @@ def create_thermo_tool_dialog(
                 "ok" if view.license_ok else "problem",
             )
             self.download_button.setVisible(view.can_install)
-            self.install_zip_button.setVisible(view.can_install)
+            self.install_archive_button.setVisible(view.can_install)
             self.open_folder_button.setVisible(view.can_open_folder)
             self.show_license_button.setEnabled(view.can_review_license)
             self.accept_license_button.setEnabled(view.can_accept_license)
@@ -450,6 +475,11 @@ def create_thermo_tool_dialog(
             self.location_note.setText(
                 f"Install location: {self._install_directory}"
                 if self._install_directory is not None
+                else ""
+            )
+            self.license_file_note.setText(
+                f"License acceptance file: {status.license_marker_path}"
+                if status.license_marker_path is not None
                 else ""
             )
             on_status_changed(status)
@@ -475,12 +505,12 @@ def create_thermo_tool_dialog(
                 self._action_changed_status,
             )
 
-        def _install_from_zip(self) -> None:
+        def _install_from_archive(self) -> None:
             path, _ = qt_widgets.QFileDialog.getOpenFileName(
                 self,
                 f"Choose {thermo_asset_label()}",
                 str(Path.home() / "Downloads"),
-                "ZIP archives (*.zip)",
+                _ARCHIVE_FILTERS[resolve_thermo_helper_specification().archive_format],
             )
             if not path:
                 return
