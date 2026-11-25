@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.metadata
 import sqlite3
 from contextlib import closing
 from dataclasses import dataclass
@@ -13,6 +12,7 @@ from typing import Literal
 import numpy as np
 import pyarrow as pa
 
+from rawtrace_qc import __version__
 from rawtrace_qc.extractors.common import (
     access_error,
     missing_level_error,
@@ -386,7 +386,7 @@ class BrukerExtractor:
             row_granularity=row_granularity,
             extracted_at=extracted_at,
             acquisition_start_time=acquisition_start_time,
-            generator=f"rawtrace-qc-bruker/{_package_version()}",
+            generator=f"rawtrace-qc-bruker/{__version__}",
             source_id=source_id,
         )
 
@@ -418,10 +418,3 @@ def _nullable_array(values: np.ndarray, data_type: pa.DataType) -> pa.Array:
         [None if not np.isfinite(value) else float(value) for value in values],
         type=data_type,
     )
-
-
-def _package_version() -> str:
-    try:
-        return importlib.metadata.version("rawtrace-qc")
-    except importlib.metadata.PackageNotFoundError:
-        return "unknown"
