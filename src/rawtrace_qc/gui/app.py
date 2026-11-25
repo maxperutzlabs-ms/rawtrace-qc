@@ -9,10 +9,10 @@ import webbrowser
 from dataclasses import replace
 from datetime import datetime
 from importlib import import_module
-from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
+from rawtrace_qc import __version__
 from rawtrace_qc.discovery import DiscoveryResult, DiscoveryScope, Vendor, discover
 from rawtrace_qc.environment import default_data_directory
 from rawtrace_qc.errors import ConfigurationError, OperationCancelledError
@@ -744,13 +744,7 @@ def create_window(
             header_title_layout.setSpacing(10)
             title = qt_widgets.QLabel("rawtrace-qc")
             title.setObjectName("appTitle")
-            try:
-                app_version = version("rawtrace-qc")
-            except PackageNotFoundError:
-                app_version = "0.1.0"
-            version_label = qt_widgets.QLabel(
-                app_version if app_version.startswith("v") else f"v{app_version}"
-            )
+            version_label = qt_widgets.QLabel(f"v{__version__}")
             version_label.setObjectName("appVersion")
             header_title_layout.addWidget(
                 title, 0, qt_core.Qt.AlignmentFlag.AlignBaseline

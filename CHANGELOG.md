@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.2.0] - 2026-11-25
 
 ### Added
 - The scan-trace specification in `docs/scan-trace-spec.md`.
@@ -9,7 +9,8 @@
 
 ### Changed
 - rawtrace-qc now uses version 0.3.1 of the Thermo tool (`ThermoScanHeaderExtractor`) and supports Thermo files on Linux and macOS, including installation from the `.tar.gz` archives of these systems. Windows on Arm uses its own build instead of the x64 build. The new version comes with new Thermo license terms. Thermo trace files now give `acquisition_start_time` as the local clock time of the acquisition computer, without a trailing `Z`.
-- The license state of the Thermo tool is read with its `--license-status` command. `ThermoHelperStatus` has the new field `license_marker_path`, and `query_license_status()` returns a `ThermoLicenseStatus`. If the Thermo tool cannot use its license folder, rawtrace-qc raises the new `ThermoHelperConfigError`. Its message names the license folder. `ThermoHelperStatus.license_folder_unusable` reports this case.
+- The desktop application now runs on Linux and macOS as well. We test it by hand on Windows and Linux, and on macOS only with automated tests.
+- The license state of the Thermo tool is read with its `--license-status` command. `ThermoHelperStatus` has the new field `license_marker_path`, and the new `query_license_status()` returns a `ThermoLicenseStatus`. If the Thermo tool cannot use its license folder, rawtrace-qc raises the new `ThermoHelperConfigError`. Its message names the license folder. `ThermoHelperStatus.license_folder_unusable` reports this case.
 - The trace schema no longer reserves the columns `charge_state`, `collision_energy`, and `activation_type`. They are out of scope for now.
 - Trace files may contain the optional `injection_time_ms` column, as the specification allows. Strict loading no longer rejects it as reserved.
 - Loading and writing a trace now rejects files without rows, with a repeated `scan_id`, or with rows that are not sorted by retention time and then by `scan_id`, as the specification requires.

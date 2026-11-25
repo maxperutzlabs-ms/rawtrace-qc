@@ -1,6 +1,6 @@
 [project]
 name = "rawtrace-qc"
-version = "0.1.0"
+version = "0.2.0"
 description = "Extract TIC and scan-level traces from Thermo and Bruker mass spectrometry raw files and generate interactive HTML QC reports"
 readme = "README.md"
 license = "Apache-2.0"
