@@ -133,6 +133,13 @@ class ThermoExtractor:
             vendor_label="Thermo",
             expect_dir=False,
         )
+        # On POSIX, the helper reports a file without read permission with exit
+        # code 3, as if it were corrupt.
+        try:
+            with resolved_input.open("rb"):
+                pass
+        except OSError as error:
+            raise access_error(resolved_input, str(error)) from error
 
         if not select_ms1 and not select_msn:
             return ExtractionResult()

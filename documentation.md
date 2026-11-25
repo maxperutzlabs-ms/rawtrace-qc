@@ -289,7 +289,7 @@ Branch only on exit codes, never on the helper's stderr. The helper uses these e
 | 7 | Internal error of the helper. | `ThermoHelperCommandError` |
 | 8 | None of the requested MS levels has scans, so nothing was written. | `NoScansError` |
 
-Any other code means a crash or a newer helper, and `ThermoExtractor` raises `ThermoHelperCommandError`. On POSIX, a negative code is a signal. Exit code 0 without any requested trace file raises `ThermoHelperExecutionError`, because it is a helper bug. A timeout raises `ExtractionError`, and an `OSError` while rawtrace-qc creates or fills the output folder raises `TraceWriteError`.
+Before it starts the helper, `ThermoExtractor` opens the raw file once and raises `AcquisitionAccessError` if that fails, because on Linux and macOS the helper reports a file without read permission with exit code 3, as if it were corrupt. Any other code means a crash or a newer helper, and `ThermoExtractor` raises `ThermoHelperCommandError`. On POSIX, a negative code is a signal. Exit code 0 without any requested trace file raises `ThermoHelperExecutionError`, because it is a helper bug. A timeout raises `ExtractionError`, and an `OSError` while rawtrace-qc creates or fills the output folder raises `TraceWriteError`.
 
 ## CLI
 
